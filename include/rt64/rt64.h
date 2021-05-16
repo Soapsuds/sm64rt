@@ -172,7 +172,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_NORMAL_MAP_SCALE) {
-		dst->uvDetailScale = src->uvDetailScale;
+		dst->uvDetailScale = src->normalMapScale;
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_REFLECTION_FACTOR) {
