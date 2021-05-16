@@ -126,11 +126,11 @@ typedef struct {
 	int color_alpha_same;
 	int opt_alpha;
 	int opt_fog;
-int opt_texture_edge;
-int opt_noise;
+	int opt_texture_edge;
+	int opt_noise;
 
-// Flag containing all attributes that are actually used by this material.
-int enabledAttributes;
+	// Flag containing all attributes that are actually used by this material.
+	int enabledAttributes;
 } RT64_MATERIAL;
 
 // Light
@@ -172,7 +172,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_NORMAL_MAP_SCALE) {
-		dst->uvDetailScale = src->normalMapScale;
+		dst->normalMapScale = src->normalMapScale;
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_REFLECTION_FACTOR) {
