@@ -122,11 +122,11 @@ struct {
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
 	int cachedMeshesPerFrame;
 	RT64_LIGHT lights[MAX_LIGHTS];
-    unsigned int lightCount;
+    	unsigned int lightCount;
 	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
 	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
-    RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
-    unsigned int dynamicLightCount;
+    	RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
+    	unsigned int dynamicLightCount;
 
 	// Ray picking data.
 	bool pickTextureNextFrame;
@@ -1051,8 +1051,8 @@ static void gfx_rt64_reset_logic_frame(void) {
 static bool gfx_rt64_wapi_start_frame(void) {
     if (RT64.dropNextFrame) {
         gfx_rt64_reset_logic_frame();
-		RT64.dropNextFrame = false;
-		return false;
+	RT64.dropNextFrame = false;
+	return false;
 	}
 	else {
 		return true;
