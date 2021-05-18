@@ -94,6 +94,7 @@ typedef struct {
 	int filterMode;
 	int diffuseTexIndex;
 	int normalTexIndex;
+	int specularTexIndex;
 	int hAddressMode;
 	int vAddressMode;
 	float ignoreNormalFactor;
@@ -114,7 +115,7 @@ typedef struct {
 	RT64_VECTOR4 diffuseColorMix;
 	float fogMul;
 	float fogOffset;
-	int _padA[2];
+	int _padA[1];
 
 	// N64 Color combiner parameters.
 	int c0[4];
@@ -158,6 +159,7 @@ typedef struct {
 	RT64_MATRIX4 transform;
 	RT64_TEXTURE *diffuseTexture;
 	RT64_TEXTURE *normalTexture;
+	RT64_TEXTURE *specularTexture;
 	RT64_MATERIAL material;
 	RT64_RECT scissorRect;
 	RT64_RECT viewportRect;

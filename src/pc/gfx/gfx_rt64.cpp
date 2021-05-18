@@ -87,6 +87,7 @@ struct RecordedMod {
     RT64_MATERIAL *materialMod;
     RT64_LIGHT *lightMod;
 	uint64_t normalMapHash;
+	uint64_t specularMapHash;
 };
 
 //	Convention of bits for different lights.
@@ -121,11 +122,11 @@ struct {
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
 	int cachedMeshesPerFrame;
 	RT64_LIGHT lights[MAX_LIGHTS];
-    unsigned int lightCount;
+    	unsigned int lightCount;
 	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
 	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
-	RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
-	unsigned int dynamicLightCount;
+    	RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
+    	unsigned int dynamicLightCount;
 
 	// Ray picking data.
 	bool pickTextureNextFrame;
@@ -214,10 +215,20 @@ uint64_t gfx_rt64_load_normal_map_mod(const json &jnormal) {
 	return gfx_rt64_get_texture_name_hash(jnormal["name"]);
 }
 
+uint64_t gfx_rt64_load_specular_map_mod(const json &jspecular) {
+	return gfx_rt64_get_texture_name_hash(jspecular["name"]);
+}
+
 json gfx_rt64_save_normal_map_mod(const std::string &normalTexName) {
 	json jnormal;
 	jnormal["name"] = normalTexName;
 	return jnormal;
+}
+
+json gfx_rt64_save_specular_map_mod(const std::string &specularTexName) {
+	json jspecular;
+	jspecular["name"] = specularTexName;
+	return jspecular;
 }
 
 RT64_VECTOR3 transform_position_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
@@ -339,11 +350,11 @@ void elapsed_time(const LARGE_INTEGER &start, const LARGE_INTEGER &end, const LA
 }
 
 int gfx_rt64_get_level_index() {
-	return (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrLevelNum : 0;
+    return (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrLevelNum : 0;
 }
 
 int gfx_rt64_get_area_index() {
-	return (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrAreaIndex : 0;
+    return (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrAreaIndex : 0;
 }
 
 void gfx_rt64_toggle_inspector() {
@@ -493,6 +504,13 @@ void gfx_rt64_load_geo_layout_mods() {
 					recordedMod->normalMapHash = 0;
 				}
 
+				if (jgeo.find("specularMapMod") != jgeo.end()) {
+					recordedMod->specularMapHash = gfx_rt64_load_specular_map_mod(jgeo["specularMapMod"]);
+				}
+				else {
+					recordedMod->specularMapHash = 0;
+				}
+
 				RT64.geoLayoutMods[geoLayout] = recordedMod;
 			}
 			else {
@@ -531,6 +549,11 @@ void gfx_rt64_save_geo_layout_mods() {
 				const std::string normName = RT64.texNameMap[geoMod->normalMapHash];
 				if (!normName.empty()) {
 					jgeo["normalMapMod"] = gfx_rt64_save_normal_map_mod(normName);
+				}
+
+				const std::string specName = RT64.texNameMap[geoMod->specularMapHash];
+				if (!normName.empty()) {
+					jgeo["specularMapMod"] = gfx_rt64_save_specular_map_mod(specName);
 				}
 				
 				jroot["geoLayouts"].push_back(jgeo);
@@ -591,6 +614,13 @@ void gfx_rt64_load_texture_mods() {
 			else {
 				RT64.texMods[texHash]->normalMapHash = 0;
 			}
+
+			if (jtex.find("specularMapMod") != jtex.end()) {
+				RT64.texMods[texHash]->specularMapHash = gfx_rt64_load_specular_map_mod(jtex["specularMapMod"]);
+			}
+			else {
+				RT64.texMods[texHash]->specularMapHash = 0;
+			}
 		}
 	}
 	else {
@@ -624,6 +654,11 @@ void gfx_rt64_save_texture_mods() {
 				const std::string normName = RT64.texNameMap[texMod->normalMapHash];
 				if (!normName.empty()) {
 					jtex["normalMapMod"] = gfx_rt64_save_normal_map_mod(normName);
+				}
+
+				const std::string specName = RT64.texNameMap[texMod->specularMapHash];
+				if (!normName.empty()) {
+					jtex["specularMapMod"] = gfx_rt64_save_specular_map_mod(specName);
 				}
 
 				jroot["textures"].push_back(jtex);
@@ -857,7 +892,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.viewportRect = { 0, 0, 0, 0 };
 	RT64.instanceCount = 0;
 	RT64.instanceAllocCount = 0;
-	RT64.dynamicLightCount = 0;
+    RT64.dynamicLightCount = 0;
 	RT64.cachedMeshesPerFrame = 0;
 	RT64.currentTile = 0;
 	memset(RT64.currentTextureIds, 0, sizeof(RT64.currentTextureIds));
@@ -1010,14 +1045,14 @@ static void gfx_rt64_wapi_handle_events(void) {
 }
 
 static void gfx_rt64_reset_logic_frame(void) {
-	RT64.dynamicLightCount = 0;
+    RT64.dynamicLightCount = 0;
 }
 
 static bool gfx_rt64_wapi_start_frame(void) {
     if (RT64.dropNextFrame) {
-		gfx_rt64_reset_logic_frame();
-		RT64.dropNextFrame = false;
-		return false;
+        gfx_rt64_reset_logic_frame();
+	RT64.dropNextFrame = false;
+	return false;
 	}
 	else {
 		return true;
@@ -1336,7 +1371,7 @@ RT64_MATERIAL gfx_rt64_rapi_build_material(ShaderProgram *prg, bool linearFilter
 
 static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 transform) {
     assert(RT64.dynamicLightCount < MAX_DYNAMIC_LIGHTS);
-	auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
+    auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
     light = *lightMod;
 
     light.position = transform_position_affine(transform, lightMod->position);
@@ -1349,14 +1384,14 @@ static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 transform) {
 	light.shadowOffset *= scale;
 }
 
-static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RecordedMod *mod, RT64_MATRIX4 transform, bool apply_light) {
+static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RT64_TEXTURE **specular, RecordedMod *mod, RT64_MATRIX4 transform, bool apply_light) {
 	if (mod->materialMod != NULL) {
 		RT64_ApplyMaterialAttributes(material, mod->materialMod);
 	}
 
 	if (apply_light && (mod->lightMod != NULL)) {
-		gfx_rt64_add_light(mod->lightMod, transform);
-	}
+            gfx_rt64_add_light(mod->lightMod, transform);
+        }
 
 	if (mod->normalMapHash != 0) {
 		auto hashIt = RT64.textureHashIdMap.find(mod->normalMapHash);
@@ -1364,6 +1399,16 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **norm
 			auto texIt = RT64.textures.find(hashIt->second);
 			if (texIt != RT64.textures.end()) {
 				*normal = texIt->second.texture;
+			}
+		}
+	}
+
+	if (mod->specularMapHash != 0) {
+		auto hashIt = RT64.textureHashIdMap.find(mod->specularMapHash);
+		if (hashIt != RT64.textureHashIdMap.end()) {
+			auto texIt = RT64.textures.find(hashIt->second);
+			if (texIt != RT64.textures.end()) {
+				*specular = texIt->second.texture;
 			}
 		}
 	}
@@ -1382,6 +1427,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	instDesc.transform = transform;
 	instDesc.diffuseTexture = RT64.blankTexture;
 	instDesc.normalTexture = nullptr;
+	instDesc.specularTexture = nullptr;
 	instDesc.scissorRect = RT64.scissorRect;
 	instDesc.viewportRect = RT64.viewportRect;
 
@@ -1413,11 +1459,11 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	// Build material with applied mods.
 	instDesc.material = gfx_rt64_rapi_build_material(RT64.shaderProgram, linearFilter, cms, cmt);
 	if (RT64.graphNodeMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, RT64.graphNodeMod, transform, false);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, RT64.graphNodeMod, transform, false);
 	}
 
 	if (textureMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, textureMod, transform, true);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, textureMod, transform, true);
 	}
 
 	if (highlightMaterial) {
@@ -1527,19 +1573,19 @@ static void gfx_rt64_rapi_start_frame(void) {
 	if (RT64.inspector != nullptr) {
 		char marioMessage[256] = "";
 		char levelMessage[256] = "";
-		int levelIndex = gfx_rt64_get_level_index();
-		int areaIndex = gfx_rt64_get_area_index();
+        int levelIndex = gfx_rt64_get_level_index();
+        int areaIndex = gfx_rt64_get_area_index();
 		sprintf(marioMessage, "Mario pos: %.1f %.1f %.1f", gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2]);
-		sprintf(levelMessage, "Level #%d Area #%d", levelIndex, areaIndex);
+        sprintf(levelMessage, "Level #%d Area #%d", levelIndex, areaIndex);
 		RT64.lib.PrintToInspector(RT64.inspector, marioMessage);
 		RT64.lib.PrintToInspector(RT64.inspector, levelMessage);
 		RT64.lib.PrintToInspector(RT64.inspector, "F1: Toggle inspectors");
 		RT64.lib.PrintToInspector(RT64.inspector, "F5: Save all configuration");
-		
+
 		// Inspect the current level's lights.
-    	RT64_LIGHT *lights = RT64.levelLights[levelIndex][areaIndex];
-    	int *lightCount = &RT64.levelLightCounts[levelIndex][areaIndex];
-    	RT64.lib.SetLightsInspector(RT64.inspector, lights, lightCount, MAX_LEVEL_LIGHTS);
+        RT64_LIGHT *lights = RT64.levelLights[levelIndex][areaIndex];
+        int *lightCount = &RT64.levelLightCounts[levelIndex][areaIndex];
+		RT64.lib.SetLightsInspector(RT64.inspector, lights, lightCount, MAX_LEVEL_LIGHTS);
 	}
 }
 
@@ -1555,11 +1601,11 @@ static void gfx_rt64_rapi_end_frame(void) {
 	RT64.lib.SetViewPerspective(RT64.view, RT64.viewMatrix, RT64.fovRadians, RT64.nearDist, RT64.farDist);
 
 	// Dynamic Lakitu camera light for Shifting Sand Land Pyramid.
-	int levelIndex = gfx_rt64_get_level_index();
-	int areaIndex = gfx_rt64_get_area_index();
+    int levelIndex = gfx_rt64_get_level_index();
+    int areaIndex = gfx_rt64_get_area_index();
 	if ((levelIndex == 8) && (areaIndex == 2)) {
-		// Build the dynamic light.
-		auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
+        // Build the dynamic light.
+        auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
 		RT64_VECTOR3 viewPos = { RT64.invViewMatrix.m[3][0], RT64.invViewMatrix.m[3][1], RT64.invViewMatrix.m[3][2] };
 		RT64_VECTOR3 marioPos = { gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2] };
 		light.diffuseColor.x = 1.0f;
@@ -1576,12 +1622,12 @@ static void gfx_rt64_rapi_end_frame(void) {
 		light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
 	}
 
-    // Build lights array out of the static level lights and the dynamic lights.
-	int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
-	RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
-	assert(RT64.lightCount <= MAX_LIGHTS);
-	memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
-	memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
+	// Build lights array out of the static level lights and the dynamic lights.
+        int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
+        RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
+        assert(RT64.lightCount <= MAX_LIGHTS);
+        memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
+        memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
     RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
 
 	// Draw frame.
@@ -1631,6 +1677,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 			texMod->materialMod = nullptr;
 			texMod->lightMod = nullptr;
 			texMod->normalMapHash = 0;
+			texMod->specularMapHash = 0;
 			RT64.texMods[RT64.pickedTextureHash] = texMod;
 		}
 
@@ -1659,71 +1706,71 @@ static void gfx_rt64_rapi_set_camera_perspective(float fov_degrees, float near_d
 
 static void gfx_rt64_rapi_set_camera_matrix(float matrix[4][4]) {
 	memcpy(&RT64.viewMatrix.m, matrix, sizeof(float) * 16);
-	gd_inverse_mat4f(&RT64.viewMatrix.m, &RT64.invViewMatrix.m);
+    gd_inverse_mat4f(&RT64.viewMatrix.m, &RT64.invViewMatrix.m);
 }
 
 static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *graphNode) {
-	if (graphNode != nullptr) {
-		// Delete the previous graph node mod if it exists already.
-		// Graph node addresses can be reused, so it's important to remove any previous mods
-		// and only keep the most up to date version of them.
-		auto graphNodeIt = RT64.graphNodeMods.find(graphNode);
-		if (graphNodeIt != RT64.graphNodeMods.end()) {
-			delete graphNodeIt->second;
-			RT64.graphNodeMods.erase(graphNodeIt);
-		}
-	}
+    if (graphNode != nullptr) {
+        // Delete the previous graph node mod if it exists already.
+        // Graph node addresses can be reused, so it's important to remove any previous mods
+        // and only keep the most up to date version of them.
+        auto graphNodeIt = RT64.graphNodeMods.find(graphNode);
+        if (graphNodeIt != RT64.graphNodeMods.end()) {
+            delete graphNodeIt->second;
+            RT64.graphNodeMods.erase(graphNodeIt);
+        }
+    }
 
-    if ((geoLayout != nullptr) && (graphNode != nullptr)) {
-		// Find the mod for the specified geoLayout.
-		auto it = RT64.geoLayoutMods.find(geoLayout);
-		RecordedMod *geoMod = (it != RT64.geoLayoutMods.end()) ? it->second : nullptr;
-		if (geoMod != nullptr) {
-			RecordedMod *graphMod = RT64.graphNodeMods[graphNode];
-			if (graphMod == nullptr) {
-				graphMod = new RecordedMod();
-				graphMod->materialMod = nullptr;
-				graphMod->lightMod = nullptr;
-				RT64.graphNodeMods[graphNode] = graphMod;
-			}
-
-			if (geoMod->materialMod != nullptr) {
-				if (graphMod->materialMod == nullptr) {
-					graphMod->materialMod = new RT64_MATERIAL();
-					graphMod->materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
+if ((geoLayout != nullptr) && (graphNode != nullptr)) {
+        // Find the mod for the specified geoLayout.
+        auto it = RT64.geoLayoutMods.find(geoLayout);
+			RecordedMod *geoMod = (it != RT64.geoLayoutMods.end()) ? it->second : nullptr;
+			if (geoMod != nullptr) {
+				RecordedMod *graphMod = RT64.graphNodeMods[graphNode];
+				if (graphMod == nullptr) {
+					graphMod = new RecordedMod();
+					graphMod->materialMod = nullptr;
+					graphMod->lightMod = nullptr;
+					RT64.graphNodeMods[graphNode] = graphMod;
 				}
 
-				RT64_ApplyMaterialAttributes(graphMod->materialMod, geoMod->materialMod);
-				graphMod->materialMod->enabledAttributes |= geoMod->materialMod->enabledAttributes;
-			}
+				if (geoMod->materialMod != nullptr) {
+					if (graphMod->materialMod == nullptr) {
+						graphMod->materialMod = new RT64_MATERIAL();
+						graphMod->materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
+					}
 
-			if (geoMod->lightMod != nullptr) {
-				if (graphMod->lightMod == nullptr) {
-					graphMod->lightMod = new RT64_LIGHT();
+					RT64_ApplyMaterialAttributes(graphMod->materialMod, geoMod->materialMod);
+					graphMod->materialMod->enabledAttributes |= geoMod->materialMod->enabledAttributes;
 				}
 
-				memcpy(graphMod->lightMod, geoMod->lightMod, sizeof(RT64_LIGHT));
+				if (geoMod->lightMod != nullptr) {
+					if (graphMod->lightMod == nullptr) {
+						graphMod->lightMod = new RT64_LIGHT();
+					}
+
+					memcpy(graphMod->lightMod, geoMod->lightMod, sizeof(RT64_LIGHT));
+				}
 			}
 		}
 	}
-}
 
 static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4]) {
-	auto graphNodeIt = RT64.graphNodeMods.find(graphNode);
-	if (graphNodeIt != RT64.graphNodeMods.end()) {
-		RecordedMod *graphNodeMod = (RecordedMod *)(graphNodeIt->second);
-		if (graphNodeMod != nullptr) {
-			if (graphNodeMod->lightMod != nullptr) {
-				RT64_MATRIX4 transform;
-				gfx_matrix_mul(transform.m, modelview_matrix, RT64.invViewMatrix.m);
-				gfx_rt64_add_light(graphNodeMod->lightMod, transform);
-			}
-			
-			return graphNodeMod;
-		}
-	}
+    auto graphNodeIt = RT64.graphNodeMods.find(graphNode);
+    if (graphNodeIt != RT64.graphNodeMods.end()) {
+        RecordedMod *graphNodeMod = (RecordedMod *) (graphNodeIt->second);
+        if (graphNodeMod != nullptr) {
+            if (graphNodeMod->lightMod != nullptr) {
+                RT64_MATRIX4 transform;
+                gfx_matrix_mul(transform.m, modelview_matrix, RT64.invViewMatrix.m);
+                gfx_rt64_add_light(graphNodeMod->lightMod, transform);
+            }
 
-	return nullptr;
+            return graphNodeMod;
+        }
+    }
+
+    return nullptr;
 }
 
 static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
