@@ -1013,10 +1013,7 @@
         "reflectionFactor": 0.03999999910593033,
         "reflectionFresnelFactor": 0.03999999910593033
       },
-      "name": "textures/inside/inside_castle_textures.04000.rgba16",
-      "specularMapMod": {
-        "name": "rt64/textures/specular_maps/inside_castle_textures.04000_spc.rgba16"
-      }
+      "name": "textures/inside/inside_castle_textures.04000.rgba16"
     },
     {
       "materialMod": null,
@@ -1034,13 +1031,7 @@
       "materialMod": {
 	"specularIntensity": 0.008
       },
-      "name": "textures/inside/inside_castle_textures.09000.rgba16",
-      "normalMapMod": {
-	"name": "rt64/textures/normal_maps/inside_castle_textures.09000_nrm.rgba16"
-      },
-      "specularMapMod": {
-        "name": "rt64/textures/specular_maps/inside_castle_textures.09000_spc.rgba16"
-      }
+      "name": "textures/inside/inside_castle_textures.09000.rgba16"
     },
     {
       "materialMod": null,
@@ -1639,10 +1630,7 @@
         "reflectionFactor": 0.03999999910593033,
         "reflectionFresnelFactor": 0.03999999910593033
       },
-      "name": "textures/outside/castle_grounds_textures.05800.rgba16",
-      "specularMapMod": {
-        "name": "rt64/textures/specular_maps/castle_grounds_textures.05800_spc.rgba16"
-      }
+      "name": "textures/outside/castle_grounds_textures.05800.rgba16"
     },
     {
       "materialMod": {
