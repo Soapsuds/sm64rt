@@ -706,6 +706,7 @@ all: $(BASEPACK_PATH)
 # phony target for building resources
 res: $(BASEPACK_PATH)
 
+ifeq ($(SKIP_BASEPACK),0)
 # prepares the basepack.lst
 $(BASEPACK_LST): $(EXE)
 	@mkdir -p $(BUILD_DIR)/$(BASEDIR)
@@ -720,6 +721,7 @@ $(BASEPACK_LST): $(EXE)
 	@find textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 ifeq ($(RENDER_API),RT64)
 	@find rt64/textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+endif
 endif
 
 # prepares the resource ZIP with base data

@@ -320,18 +320,6 @@ void transform_loaded_vertex(size_t i, Mat4f *src) {
 
 #endif
 
-#ifdef GFX_ENABLE_GRAPH_NODE_MODS
-
-void gfx_register_layout_graph_node(void *geo_layout, void *graph_node) {
-    gfx_rapi->register_layout_graph_node(geo_layout, graph_node);
-}
-
-void *gfx_build_graph_node_mod(void *graph_node, float modelview_matrix[4][4]) {
-    return gfx_rapi->build_graph_node_mod(graph_node, modelview_matrix);
-}
-
-#endif
-
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
         int num = buf_vbo_num_tris;

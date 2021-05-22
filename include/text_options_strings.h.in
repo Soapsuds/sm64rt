@@ -88,6 +88,7 @@
 
 #define TEXT_OPT_RT64      _("RAYTRACING")
 #define TEXT_OPT_RESSCALE  _("Resolution Scale")
+#define TEXT_OPT_MAXLIGHTS _("Max Lights")
 #define TEXT_OPT_SPHEREL   _("Sphere Lights")
 #define TEXT_OPT_GI        _("Global Illumination")
 #define TEXT_OPT_GIWEIGHT  _("GI Intensity")
@@ -159,6 +160,7 @@
 
 #define TEXT_OPT_RT64      _("RAYTRACING")
 #define TEXT_OPT_RESSCALE  _("Resolution Scale")
+#define TEXT_OPT_MAXLIGHTS _("Max Lights")
 #define TEXT_OPT_SPHEREL   _("Sphere Lights")
 #define TEXT_OPT_GI        _("Global Illumination")
 #define TEXT_OPT_GIWEIGHT  _("GI Intensity")

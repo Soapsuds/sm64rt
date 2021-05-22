@@ -48,22 +48,39 @@ using json = nlohmann::json;
 #define MAX_LIGHTS						512
 #define MAX_LEVEL_LIGHTS				128
 #define MAX_DYNAMIC_LIGHTS				MAX_LIGHTS - MAX_LEVEL_LIGHTS
-#define MAX_LEVELS						39
+#define MAX_LEVELS						40
 #define MAX_AREAS						3
 #define LEVEL_LIGHTS_FILENAME			FS_BASEDIR "/rt64/level_lights.json"
 #define GEO_LAYOUT_MODS_FILENAME		FS_BASEDIR "/rt64/geo_layout_mods.json"
 #define TEXTURE_MODS_FILENAME			FS_BASEDIR "/rt64/texture_mods.json"
 
+// HACK: Activates a workaround for D3D12 not giving the best performance if the raytracing pipeline is
+// compiled before drawing with RT at least one frame before. Investigation on the exact cause behind
+// this weird behavior is still ongoing.
+#define PRELOAD_IMPROVED_PERFORMANCE_HACK
+
+uint16_t shaderVariantKey(bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap) {
+	uint16_t key = 0, fact = 1;
+	key += raytrace ? fact : 0; fact *= 2;
+	key += filter * fact; fact *= 2;
+	key += hAddr * fact; fact *= 3;
+	key += vAddr * fact; fact *= 3;
+	key += normalMap ? fact : 0; fact *= 2;
+	key += specularMap ? fact : 0; fact *= 2;
+	return key;
+}
+
 struct ShaderProgram {
-    uint32_t shader_id;
-    uint8_t num_inputs;
-    uint8_t num_floats;
-    bool used_textures[2];
+    uint32_t shaderId;
+    uint8_t numInputs;
+    bool usedTextures[2];
+	std::unordered_map<uint16_t, RT64_SHADER *> shaderVariantMap;
 };
 
 struct RecordedMesh {
     RT64_MESH *mesh;
     uint32_t vertexCount;
+	uint32_t vertexStride;
     uint32_t indexCount;
     int lifetime;
     bool inUse;
@@ -120,13 +137,17 @@ struct {
 	std::unordered_map<uint64_t, RecordedMesh> dynamicMeshes;
 	std::unordered_map<uint64_t, RecordedMeshKey> dynamicMeshKeys;
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
+	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
 	int cachedMeshesPerFrame;
 	RT64_LIGHT lights[MAX_LIGHTS];
-    	unsigned int lightCount;
+    unsigned int lightCount;
 	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
 	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
-    	RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
-    	unsigned int dynamicLightCount;
+    RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
+    unsigned int dynamicLightCount;
+#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
+	unsigned int preloadLogicStep;
+#endif
 
 	// Ray picking data.
 	bool pickTextureNextFrame;
@@ -144,6 +165,8 @@ struct {
 	std::unordered_map<uint64_t, std::string> texNameMap;
 	std::map<std::string, uint64_t> nameTexMap;
 	std::unordered_map<uint64_t, RecordedMod *> texMods;
+	std::map<uint64_t, uint64_t> texHashAliasMap;
+	std::map<uint64_t, std::vector<uint64_t>> texHashAliasesMap;
 
 	// Camera.
 	RT64_MATRIX4 viewMatrix;
@@ -196,6 +219,7 @@ uint64_t gfx_rt64_get_texture_name_hash(const std::string &name) {
 }
 
 void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
+	// General parameters
 	light->position.x = jlight["position"][0];
 	light->position.y = jlight["position"][1];
 	light->position.z = jlight["position"][2];
@@ -204,11 +228,25 @@ void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
 	light->diffuseColor.x = jlight["diffuseColor"][0];
 	light->diffuseColor.y = jlight["diffuseColor"][1];
 	light->diffuseColor.z = jlight["diffuseColor"][2];
-	light->specularIntensity = jlight["specularIntensity"];
 	light->shadowOffset = jlight["shadowOffset"];
 	light->attenuationExponent = jlight["attenuationExponent"];
 	light->flickerIntensity = jlight["flickerIntensity"];
 	light->groupBits = jlight["groupBits"];
+
+	// Backwards compatibility
+	if (jlight.find("specularIntensity") != jlight.end()) {
+		float specularIntensity = jlight["specularIntensity"];
+		light->specularColor.x = specularIntensity * light->diffuseColor.x;
+		light->specularColor.y = specularIntensity * light->diffuseColor.y;
+		light->specularColor.z = specularIntensity * light->diffuseColor.z;
+	}
+	
+	// New parameters
+	if (jlight.find("specularColor") != jlight.end()) {
+		light->specularColor.x = jlight["specularColor"][0];
+		light->specularColor.y = jlight["specularColor"][1];
+		light->specularColor.z = jlight["specularColor"][2];
+	}
 }
 
 uint64_t gfx_rt64_load_normal_map_mod(const json &jnormal) {
@@ -257,7 +295,7 @@ json gfx_rt64_save_light(RT64_LIGHT *light) {
 	jlight["attenuationRadius"] = light->attenuationRadius;
 	jlight["pointRadius"] = light->pointRadius;
 	jlight["diffuseColor"] = { light->diffuseColor.x, light->diffuseColor.y, light->diffuseColor.z };
-	jlight["specularIntensity"] = light->specularIntensity;
+	jlight["specularColor"] = { light->specularColor.x, light->specularColor.y, light->specularColor.z };
 	jlight["shadowOffset"] = light->shadowOffset;
 	jlight["attenuationExponent"] = light->attenuationExponent;
 	jlight["flickerIntensity"] = light->flickerIntensity;
@@ -349,6 +387,144 @@ void elapsed_time(const LARGE_INTEGER &start, const LARGE_INTEGER &end, const LA
 	elapsed.QuadPart /= frequency.QuadPart;
 }
 
+static void gfx_rt64_rapi_unload_shader(struct ShaderProgram *old_prg) {
+	
+}
+
+static void gfx_rt64_rapi_load_shader(struct ShaderProgram *new_prg) {
+	RT64.shaderProgram = new_prg;
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(uint32_t shader_id) {
+	ShaderProgram *shaderProgram = new ShaderProgram();
+    int c[2][4];
+    for (int i = 0; i < 4; i++) {
+        c[0][i] = (shader_id >> (i * 3)) & 7;
+        c[1][i] = (shader_id >> (12 + i * 3)) & 7;
+    }
+
+	shaderProgram->shaderId = shader_id;
+    shaderProgram->usedTextures[0] = false;
+    shaderProgram->usedTextures[1] = false;
+    shaderProgram->numInputs = 0;
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (c[i][j] >= SHADER_INPUT_1 && c[i][j] <= SHADER_INPUT_4) {
+                if (c[i][j] > shaderProgram->numInputs) {
+                    shaderProgram->numInputs = c[i][j];
+                }
+            }
+            if (c[i][j] == SHADER_TEXEL0 || c[i][j] == SHADER_TEXEL0A) {
+                shaderProgram->usedTextures[0] = true;
+            }
+            if (c[i][j] == SHADER_TEXEL1) {
+                shaderProgram->usedTextures[1] = true;
+            }
+        }
+    }
+
+	RT64.shaderPrograms[shader_id] = shaderProgram;
+
+	gfx_rt64_rapi_load_shader(shaderProgram);
+
+	return shaderProgram;
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(uint32_t shader_id) {
+	auto it = RT64.shaderPrograms.find(shader_id);
+    return (it != RT64.shaderPrograms.end()) ? it->second : nullptr;
+}
+
+static void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs, bool used_textures[2]) {
+    *num_inputs = prg->numInputs;
+    used_textures[0] = prg->usedTextures[0];
+    used_textures[1] = prg->usedTextures[1];
+}
+
+void gfx_rt64_rapi_preload_shader(unsigned int shader_id, bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap) {
+	ShaderProgram *shaderProgram = gfx_rt64_rapi_lookup_shader(shader_id);
+	if (shaderProgram == nullptr) {
+		shaderProgram = gfx_rt64_rapi_create_and_load_new_shader(shader_id);
+	}
+
+	uint16_t variantKey = shaderVariantKey(raytrace, filter, hAddr, vAddr, normalMap, specularMap);
+	if (shaderProgram->shaderVariantMap[variantKey] == nullptr) {
+		int flags = raytrace ? RT64_SHADER_RAYTRACE_ENABLED : RT64_SHADER_RASTER_ENABLED;
+		if (normalMap)
+			flags |= RT64_SHADER_NORMAL_MAP_ENABLED;
+
+		if (specularMap)
+			flags |= RT64_SHADER_SPECULAR_MAP_ENABLED;
+		
+		shaderProgram->shaderVariantMap[variantKey] = RT64.lib.CreateShader(RT64.device, shader_id, filter, hAddr, vAddr, flags);
+	}
+};
+
+void gfx_rt64_rapi_preload_shaders() {
+	gfx_rt64_rapi_preload_shader(0x1200200, 0, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x45, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x200, 1, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200A00, 0, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0xA00, 0, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5045045, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x551, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x200, 0, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1A00045, 0, 1, 1, 1, false, false);
+	gfx_rt64_rapi_preload_shader(0x1A00A00, 0, 0, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 0, 0, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 0, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 0, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200045, 0, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x45, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x45, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x45, 1, 1, 2, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x38D, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5045045, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5045045, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 1, 1, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1081081, 0, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x5045045, 1, 1, 1, 1, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 0, 0, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200045, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200200, 1, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1A00A6F, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0xA00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200045, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200045, 1, 1, 2, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200200, 1, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200A00, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x7A00A00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x7A00A00, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x7A00A00, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x120038D, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200A00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200045, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200045, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x38D, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x5200200, 1, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x5A00A00, 1, 1, 2, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045A00, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 2, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200045, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1141045, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1200045, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0xA00, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200A00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 0, 0, true, false);
+	gfx_rt64_rapi_preload_shader(0x9200200, 1, 0, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x920038D, 1, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x9200A00, 1, 1, 0, 0, false, false);
+	gfx_rt64_rapi_preload_shader(0x1A00045, 0, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x9200045, 1, 1, 0, 0, false, false);
+}
+
 int gfx_rt64_get_level_index() {
     return (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrLevelNum : 0;
 }
@@ -401,13 +577,22 @@ void gfx_rt64_load_material_mod_vector4(const json &jmatmod, RT64_MATERIAL *mate
 }
 
 void gfx_rt64_load_material_mod(const json &jmatmod, RT64_MATERIAL *materialMod) {
+	// Backwards compatibility
+	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "normalMapScale", RT64_ATTRIBUTE_UV_DETAIL_SCALE, &materialMod->uvDetailScale, &materialMod->enabledAttributes);
+	if (jmatmod.find("specularIntensity") != jmatmod.end()) {
+		float specularIntensity = jmatmod["specularIntensity"];
+		materialMod->specularColor = { specularIntensity, specularIntensity, specularIntensity };
+		materialMod->enabledAttributes |= RT64_ATTRIBUTE_SPECULAR_COLOR;
+	}
+
+	// Current version
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "ignoreNormalFactor", RT64_ATTRIBUTE_IGNORE_NORMAL_FACTOR, &materialMod->ignoreNormalFactor, &materialMod->enabledAttributes);
-	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "normalMapScale", RT64_ATTRIBUTE_NORMAL_MAP_SCALE, &materialMod->normalMapScale, &materialMod->enabledAttributes);
+	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "uvDetailScale", RT64_ATTRIBUTE_UV_DETAIL_SCALE, &materialMod->uvDetailScale, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "reflectionFactor", RT64_ATTRIBUTE_REFLECTION_FACTOR, &materialMod->reflectionFactor, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "reflectionFresnelFactor", RT64_ATTRIBUTE_REFLECTION_FRESNEL_FACTOR, &materialMod->reflectionFresnelFactor, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "reflectionShineFactor", RT64_ATTRIBUTE_REFLECTION_SHINE_FACTOR, &materialMod->reflectionShineFactor, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "refractionFactor", RT64_ATTRIBUTE_REFRACTION_FACTOR, &materialMod->refractionFactor, &materialMod->enabledAttributes);
-	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "specularIntensity", RT64_ATTRIBUTE_SPECULAR_INTENSITY, &materialMod->specularIntensity, &materialMod->enabledAttributes);
+	gfx_rt64_load_material_mod_vector3(jmatmod, materialMod, "specularColor", RT64_ATTRIBUTE_SPECULAR_COLOR, &materialMod->specularColor, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "specularExponent", RT64_ATTRIBUTE_SPECULAR_EXPONENT, &materialMod->specularExponent, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "solidAlphaMultiplier", RT64_ATTRIBUTE_SOLID_ALPHA_MULTIPLIER, &materialMod->solidAlphaMultiplier, &materialMod->enabledAttributes);
 	gfx_rt64_load_material_mod_float(jmatmod, materialMod, "shadowAlphaMultiplier", RT64_ATTRIBUTE_SHADOW_ALPHA_MULTIPLIER, &materialMod->shadowAlphaMultiplier, &materialMod->enabledAttributes);
@@ -445,12 +630,12 @@ void gfx_rt64_save_material_mod_vector4(json &jmatmod, RT64_MATERIAL *materialMo
 json gfx_rt64_save_material_mod(RT64_MATERIAL *materialMod) {
 	json jmatmod;
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_IGNORE_NORMAL_FACTOR, "ignoreNormalFactor", materialMod->ignoreNormalFactor);
-	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_NORMAL_MAP_SCALE, "normalMapScale", materialMod->normalMapScale);
+	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_UV_DETAIL_SCALE, "uvDetailScale", materialMod->uvDetailScale);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_REFLECTION_FACTOR, "reflectionFactor", materialMod->reflectionFactor);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_REFLECTION_FRESNEL_FACTOR, "reflectionFresnelFactor", materialMod->reflectionFresnelFactor);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_REFLECTION_SHINE_FACTOR, "reflectionShineFactor", materialMod->reflectionShineFactor);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_REFRACTION_FACTOR, "refractionFactor", materialMod->refractionFactor);
-	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_SPECULAR_INTENSITY, "specularIntensity", materialMod->specularIntensity);
+	gfx_rt64_save_material_mod_vector3(jmatmod, materialMod, RT64_ATTRIBUTE_SPECULAR_COLOR, "specularColor", materialMod->specularColor);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_SPECULAR_EXPONENT, "specularExponent", materialMod->specularExponent);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_SOLID_ALPHA_MULTIPLIER, "solidAlphaMultiplier", materialMod->solidAlphaMultiplier);
 	gfx_rt64_save_material_mod_float(jmatmod, materialMod, RT64_ATTRIBUTE_SHADOW_ALPHA_MULTIPLIER, "shadowAlphaMultiplier", materialMod->shadowAlphaMultiplier);
@@ -504,6 +689,7 @@ void gfx_rt64_load_geo_layout_mods() {
 					recordedMod->normalMapHash = 0;
 				}
 
+				// Parse specular map mod.
 				if (jgeo.find("specularMapMod") != jgeo.end()) {
 					recordedMod->specularMapHash = gfx_rt64_load_specular_map_mod(jgeo["specularMapMod"]);
 				}
@@ -615,11 +801,21 @@ void gfx_rt64_load_texture_mods() {
 				RT64.texMods[texHash]->normalMapHash = 0;
 			}
 
+			// Parse specular map mod.
 			if (jtex.find("specularMapMod") != jtex.end()) {
 				RT64.texMods[texHash]->specularMapHash = gfx_rt64_load_specular_map_mod(jtex["specularMapMod"]);
 			}
 			else {
 				RT64.texMods[texHash]->specularMapHash = 0;
+			}
+
+			// Parse texture name aliases.
+			if (jtex.find("aliases") != jtex.end()) {
+				for (const json &jalias : jtex["aliases"]) {
+					uint64_t aliasHash = gfx_rt64_get_texture_name_hash(jalias);
+					RT64.texHashAliasMap[aliasHash] = texHash;
+					RT64.texHashAliasesMap[texHash].push_back(aliasHash);
+				}
 			}
 		}
 	}
@@ -661,6 +857,11 @@ void gfx_rt64_save_texture_mods() {
 					jtex["specularMapMod"] = gfx_rt64_save_specular_map_mod(specName);
 				}
 
+				const std::vector<uint64_t> aliasHashes = RT64.texHashAliasesMap[texHash];
+				for (const auto &aliasHash : aliasHashes) {
+					jtex["aliases"].push_back(RT64.texNameMap[aliasHash]);
+				}
+
 				jroot["textures"].push_back(jtex);
 			}
 		}
@@ -696,11 +897,16 @@ static void onkeyup(WPARAM w_param, LPARAM l_param) {
 void gfx_rt64_apply_config() {
 	RT64_VIEW_DESC desc;
 	desc.resolutionScale = configRT64ResScale / 100.0f;
+	desc.maxLightSamples = configRT64MaxLights;
 	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
 	desc.giBounces = configRT64GI ? 1 : 0;
 	desc.ambGiMixWeight = configRT64GIStrength / 100.0f;
 	desc.denoiserEnabled = configRT64Denoiser;
 	RT64.lib.SetViewDescription(RT64.view, desc);
+}
+
+static void gfx_rt64_reset_logic_frame(void) {
+    RT64.dynamicLightCount = 0;
 }
 
 LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -752,6 +958,10 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 				gfx_rt64_save_texture_mods();
 				gfx_rt64_save_level_lights();
 			}
+
+			if (wParam == VK_F6) {
+				gfx_rt64_rapi_preload_shaders();
+			}
 		}
 
 		onkeydown(wParam, lParam);
@@ -777,6 +987,7 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 				LARGE_INTEGER StartTime, EndTime;
 				QueryPerformanceCounter(&StartTime);
 				RT64.run_one_game_iter();
+				gfx_rt64_reset_logic_frame();
 				QueryPerformanceCounter(&EndTime);
 				elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
 				if (RT64.inspector != nullptr) {
@@ -849,8 +1060,8 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RegisterClass(&wc);
 
 	// Create window.
-	const int Width = 1280;
-	const int Height = 720;
+	const int Width = 1920;
+	const int Height = 1080;
 	RECT rect;
 	UINT dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
 	rect.left = (GetSystemMetrics(SM_CXSCREEN) - Width) / 2;
@@ -904,6 +1115,16 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.pickTextureNextFrame = false;
 	RT64.pickTextureHighlight = false;
 	RT64.pickedTextureHash = 0;
+#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
+	RT64.preloadLogicStep = 0;
+#endif
+
+	// Initialize the triangle list index array used by all meshes.
+	unsigned int index = 0;
+	while (index < GFX_MAX_BUFFERED) {
+		RT64.indexTriangleList[index] = index;
+		index++;
+	}
 
 	// Preload a blank texture.
 	int blankBytesCount = 256 * 256 * 4;
@@ -920,16 +1141,13 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	}
 
 	// Build a default material.
-	RT64.defaultMaterial.filterMode = 1;
-	RT64.defaultMaterial.hAddressMode = 0;
-	RT64.defaultMaterial.vAddressMode = 0;
 	RT64.defaultMaterial.ignoreNormalFactor = 0.0f;
-    RT64.defaultMaterial.normalMapScale = 1.0f;
+    RT64.defaultMaterial.uvDetailScale = 1.0f;
 	RT64.defaultMaterial.reflectionFactor = 0.0f;
 	RT64.defaultMaterial.reflectionFresnelFactor = 1.0f;
     RT64.defaultMaterial.reflectionShineFactor = 0.0f;
 	RT64.defaultMaterial.refractionFactor = 0.0f;
-	RT64.defaultMaterial.specularIntensity = 1.0f;
+	RT64.defaultMaterial.specularColor = { 1.0f, 1.0f, 1.0f };
 	RT64.defaultMaterial.specularExponent = 5.0f;
 	RT64.defaultMaterial.solidAlphaMultiplier = 1.0f;
 	RT64.defaultMaterial.shadowAlphaMultiplier = 1.0f;
@@ -948,27 +1166,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
     RT64.defaultMaterial.fogColor.z = 1.0f;
 	RT64.defaultMaterial.fogMul = 0.0f;
 	RT64.defaultMaterial.fogOffset = 0.0f;
-
-    // Configure N64 Color combiner parameters.
-	RT64.defaultMaterial.c0[0] = 0;
-	RT64.defaultMaterial.c0[1] = 0;
-	RT64.defaultMaterial.c0[2] = 0;
-	RT64.defaultMaterial.c0[3] = 5;
-	RT64.defaultMaterial.c1[0] = 0;
-	RT64.defaultMaterial.c1[1] = 0;
-	RT64.defaultMaterial.c1[2] = 0;
-	RT64.defaultMaterial.c1[3] = 0;
-	RT64.defaultMaterial.do_single[0] = 1;
-	RT64.defaultMaterial.do_single[1] = 0;
-	RT64.defaultMaterial.do_multiply[0] = 0;
-	RT64.defaultMaterial.do_multiply[1] = 0;
-	RT64.defaultMaterial.do_mix[0] = 0;
-	RT64.defaultMaterial.do_mix[1] = 0;
-	RT64.defaultMaterial.color_alpha_same = 0;
-	RT64.defaultMaterial.opt_alpha = 0;
-	RT64.defaultMaterial.opt_fog = 1;
-	RT64.defaultMaterial.opt_texture_edge = 0;
-	RT64.defaultMaterial.opt_noise = 0;
+	RT64.defaultMaterial.fogEnabled = false;
 
 	// Initialize the global lights to their default values.
 	memset(RT64.levelLights, 0, sizeof(RT64.levelLights));
@@ -987,7 +1185,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
             RT64.levelLights[l][a][1].diffuseColor.z = 0.65f;
             RT64.levelLights[l][a][1].attenuationRadius = 1e11;
 			RT64.levelLights[l][a][1].pointRadius = 5000.0f;
-            RT64.levelLights[l][a][1].specularIntensity = 1.0f;
+            RT64.levelLights[l][a][1].specularColor = { 0.8f, 0.75f, 0.65f };
             RT64.levelLights[l][a][1].shadowOffset = 0.0f;
             RT64.levelLights[l][a][1].attenuationExponent = 0.0f;
 			RT64.levelLights[l][a][1].groupBits = RT64_LIGHT_GROUP_DEFAULT;
@@ -1044,15 +1242,10 @@ static void gfx_rt64_wapi_get_dimensions(uint32_t *width, uint32_t *height) {
 static void gfx_rt64_wapi_handle_events(void) {
 }
 
-static void gfx_rt64_reset_logic_frame(void) {
-    RT64.dynamicLightCount = 0;
-}
-
 static bool gfx_rt64_wapi_start_frame(void) {
-    if (RT64.dropNextFrame) {
-        gfx_rt64_reset_logic_frame();
-	RT64.dropNextFrame = false;
-	return false;
+	if (RT64.dropNextFrame) {
+		RT64.dropNextFrame = false;
+		return false;
 	}
 	else {
 		return true;
@@ -1071,61 +1264,6 @@ double gfx_rt64_wapi_get_time(void) {
 
 static bool gfx_rt64_rapi_z_is_from_0_to_1(void) {
     return true;
-}
-
-static void gfx_rt64_rapi_unload_shader(struct ShaderProgram *old_prg) {
-	
-}
-
-static void gfx_rt64_rapi_load_shader(struct ShaderProgram *new_prg) {
-	RT64.shaderProgram = new_prg;
-}
-
-static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(uint32_t shader_id) {
-	ShaderProgram *shaderProgram = new ShaderProgram();
-    int c[2][4];
-    for (int i = 0; i < 4; i++) {
-        c[0][i] = (shader_id >> (i * 3)) & 7;
-        c[1][i] = (shader_id >> (12 + i * 3)) & 7;
-    }
-
-	shaderProgram->shader_id = shader_id;
-    shaderProgram->used_textures[0] = false;
-    shaderProgram->used_textures[1] = false;
-    shaderProgram->num_inputs = 0;
-
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 4; j++) {
-            if (c[i][j] >= SHADER_INPUT_1 && c[i][j] <= SHADER_INPUT_4) {
-                if (c[i][j] > shaderProgram->num_inputs) {
-                    shaderProgram->num_inputs = c[i][j];
-                }
-            }
-            if (c[i][j] == SHADER_TEXEL0 || c[i][j] == SHADER_TEXEL0A) {
-                shaderProgram->used_textures[0] = true;
-            }
-            if (c[i][j] == SHADER_TEXEL1) {
-                shaderProgram->used_textures[1] = true;
-            }
-        }
-    }
-
-	RT64.shaderPrograms[shader_id] = shaderProgram;
-
-	gfx_rt64_rapi_load_shader(shaderProgram);
-
-	return shaderProgram;
-}
-
-static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(uint32_t shader_id) {
-	auto it = RT64.shaderPrograms.find(shader_id);
-    return (it != RT64.shaderPrograms.end()) ? it->second : nullptr;
-}
-
-static void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs, bool used_textures[2]) {
-    *num_inputs = prg->num_inputs;
-    used_textures[0] = prg->used_textures[0];
-    used_textures[1] = prg->used_textures[1];
 }
 
 static uint32_t gfx_rt64_rapi_new_texture(const char *name) {
@@ -1183,63 +1321,20 @@ static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
 static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytraceable) {
 	assert(RT64.shaderProgram != nullptr);
 
-    const bool useTexture = RT64.shaderProgram->used_textures[0] || RT64.shaderProgram->used_textures[1];
-	const int numInputs = RT64.shaderProgram->num_inputs;
-	const bool useAlpha = RT64.shaderProgram->shader_id & SHADER_OPT_ALPHA;
-	static const int MaxVertexCount = GFX_MAX_BUFFERED * 3;
-	static const int MaxIndexCount = GFX_MAX_BUFFERED;
-	static RT64_VERTEX vertices[MaxVertexCount];
-	static unsigned int indices[MaxIndexCount];
-	unsigned int f = 0, vertexCount = 0;
-	assert((buf_vbo_num_tris * 3) <= MaxVertexCount);
-	memset(vertices, 0, buf_vbo_num_tris * 3 * sizeof(RT64_VERTEX));
-	while (f < buf_vbo_len) {
-		auto &v = vertices[vertexCount];
-		v.position.x = buf_vbo[f++];
-		v.position.y = buf_vbo[f++];
-		v.position.z = buf_vbo[f++];
-		f++;
-
-		v.normal.x = buf_vbo[f++];
-		v.normal.y = buf_vbo[f++];
-		v.normal.z = buf_vbo[f++];
-
-		if (useTexture) {
-			v.uv.x = buf_vbo[f++];
-			v.uv.y = buf_vbo[f++];
-		}
-
-		for (int i = 0; i < numInputs; i++) {
-			v.inputs[i].x = buf_vbo[f++];
-			v.inputs[i].y = buf_vbo[f++];
-			v.inputs[i].z = buf_vbo[f++];
-
-			if (useAlpha) {
-				v.inputs[i].w = buf_vbo[f++];
-			}
-			else {
-				v.inputs[i].w = 1.0f;
-			}
-		}
-
-		vertexCount++;
-	}
-
+    const bool useTexture = RT64.shaderProgram->usedTextures[0] || RT64.shaderProgram->usedTextures[1];
+	const int numInputs = RT64.shaderProgram->numInputs;
+	const bool useAlpha = RT64.shaderProgram->shaderId & SHADER_OPT_ALPHA;
+	unsigned int vertexCount = 0;
+	unsigned int vertexStride = 0;
+	unsigned int indexCount = buf_vbo_num_tris * 3;
+	void *vertexBuffer = buf_vbo;
+	vertexStride = 16 + 12 + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
+	vertexCount = (buf_vbo_len * 4) / vertexStride;
+	assert(buf_vbo_num_tris == (vertexCount / 3));
+	
 	// Calculate hash and use it as key.
-	//
-	// NOTE: We limit the max amount of elements that can be hashed to improve performance with
-	// model mods that add a lot of mesh data. To improve this behavior with large models that
-	// only change some of their vertices, like Goddard, we try to sample and skip vertices to
-	// get a hash that represents the entire mesh more accurately.
     XXHash64 hashStream(0);
-	const unsigned int HashMaxVertexCount = 32;
-	const unsigned int vertexStride = std::max(vertexCount / HashMaxVertexCount, (unsigned int)(1));
-	unsigned int vertex = 0;
-	while (vertex < vertexCount) {
-    	hashStream.add(&vertices[vertex], sizeof(RT64_VERTEX));
-		vertex += vertexStride;
-	}
-
+	hashStream.add(buf_vbo, buf_vbo_len * sizeof(float));
     uint64_t key = hashStream.hash();
 
 	// Check for static mesh first.
@@ -1254,22 +1349,16 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	dynamicMeshKey.counter++;
 	dynamicMeshKey.seen = true;
 
-	// Build the index array.
-	unsigned int indexCount = 0;
-	for (int t = 0; t < buf_vbo_num_tris; t++) {
-		indices[t * 3 + 0] = indexCount++;
-		indices[t * 3 + 1] = indexCount++;
-		indices[t * 3 + 2] = indexCount++;
-	}
-
 	// Store the mesh as static if requirements are met.
 	if ((dynamicMeshKey.counter > CACHED_MESH_REQUIRED_FRAMES) && (RT64.cachedMeshesPerFrame < CACHED_MESH_MAX_PER_FRAME)) {
 		auto &staticMesh = RT64.staticMeshes[key];
 		staticMesh.mesh = RT64.lib.CreateMesh(RT64.device, raytraceable ? RT64_MESH_RAYTRACE_ENABLED : 0);
 		staticMesh.vertexCount = vertexCount;
+		staticMesh.vertexStride = vertexStride;
 		staticMesh.indexCount = indexCount;
 		staticMesh.raytraceable = raytraceable;
-		RT64.lib.SetMesh(staticMesh.mesh, vertices, vertexCount, indices, indexCount);
+		staticMesh.lifetime = CACHED_MESH_LIFETIME;
+		RT64.lib.SetMesh(staticMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
 		RT64.cachedMeshesPerFrame++;
 		return staticMesh.mesh;
 	}
@@ -1288,6 +1377,7 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 		if (
 			!dynamicMeshIt.second.inUse &&
 			(dynamicMeshIt.second.vertexCount == vertexCount) && 
+			(dynamicMeshIt.second.vertexStride == vertexStride) && 
 			(dynamicMeshIt.second.indexCount == indexCount) && 
 			(dynamicMeshIt.second.raytraceable == raytraceable)
 		) 
@@ -1309,6 +1399,7 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	if (foundKey == 0) {
 		dynamicMesh.mesh = RT64.lib.CreateMesh(RT64.device, raytraceable ? (RT64_MESH_RAYTRACE_ENABLED | RT64_MESH_RAYTRACE_UPDATABLE) : 0);
 		dynamicMesh.vertexCount = vertexCount;
+		dynamicMesh.vertexStride = vertexStride;
 		dynamicMesh.indexCount = indexCount;
 		dynamicMesh.raytraceable = raytraceable;
 	}
@@ -1316,7 +1407,7 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	// Update the dynamic mesh.
 	dynamicMesh.inUse = true;
 	dynamicMesh.lifetime = DYNAMIC_MESH_LIFETIME;
-	RT64.lib.SetMesh(dynamicMesh.mesh, vertices, vertexCount, indices, indexCount);
+	RT64.lib.SetMesh(dynamicMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
 	return dynamicMesh.mesh;
 }
 
@@ -1329,44 +1420,6 @@ RT64_INSTANCE *gfx_rt64_rapi_add_instance() {
 	}
 
 	return RT64.instances[instanceIndex];
-}
-
-RT64_MATERIAL gfx_rt64_rapi_build_material(ShaderProgram *prg, bool linearFilter, uint32_t cms, uint32_t cmt) {
-	RT64_MATERIAL mat = RT64.defaultMaterial;
-
-	// Sampler.
-	mat.filterMode = linearFilter;
-	mat.hAddressMode = (cms & G_TX_CLAMP) ? 2 : (cms & G_TX_MIRROR) ? 1 : 0;
-	mat.vAddressMode = (cmt & G_TX_CLAMP) ? 2 : (cmt & G_TX_MIRROR) ? 1 : 0;
-
-	// Fog.
-	mat.fogColor = RT64.fogColor;
-	mat.fogMul = RT64.fogMul;
-	mat.fogOffset = RT64.fogOffset;
-
-	// N64 Color Combiner.
-	uint32_t shader_id = prg->shader_id;
-	mat.c0[0] = (shader_id >> (0 * 3)) & 7;
-	mat.c0[1] = (shader_id >> (1 * 3)) & 7;
-	mat.c0[2] = (shader_id >> (2 * 3)) & 7;
-	mat.c0[3] = (shader_id >> (3 * 3)) & 7;
-	mat.c1[0] = (shader_id >> (12 + 0 * 3)) & 7;
-	mat.c1[1] = (shader_id >> (12 + 1 * 3)) & 7;
-	mat.c1[2] = (shader_id >> (12 + 2 * 3)) & 7;
-	mat.c1[3] = (shader_id >> (12 + 3 * 3)) & 7;
-	mat.do_single[0] = mat.c0[2] == 0;
-	mat.do_single[1] = mat.c1[2] == 0;
-	mat.do_multiply[0] = mat.c0[1] == 0 && mat.c0[3] == 0;
-	mat.do_multiply[1] = mat.c1[1] == 0 && mat.c1[3] == 0;
-	mat.do_mix[0] = mat.c0[1] == mat.c0[3];
-	mat.do_mix[1] = mat.c1[1] == mat.c1[3];
-	mat.color_alpha_same = (shader_id & 0xfff) == ((shader_id >> 12) & 0xfff);
-	mat.opt_alpha = (shader_id & SHADER_OPT_ALPHA) != 0;
-	mat.opt_fog = (shader_id & SHADER_OPT_FOG) != 0;
-	mat.opt_texture_edge = (shader_id & SHADER_OPT_TEXTURE_EDGE) != 0;
-	mat.opt_noise = (shader_id & SHADER_OPT_NOISE) != 0;
-
-	return mat;
 }
 
 static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 transform) {
@@ -1433,7 +1486,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 
 	// Find all parameters associated to the texture if it's used.
 	bool highlightMaterial = false;
-	if (RT64.shaderProgram->used_textures[0]) {
+	if (RT64.shaderProgram->usedTextures[0]) {
 		RecordedTexture &recordedTexture = RT64.textures[RT64.currentTextureIds[RT64.currentTile]];
 		linearFilter = recordedTexture.linearFilter; 
 		cms = recordedTexture.cms; 
@@ -1443,7 +1496,15 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 			instDesc.diffuseTexture = recordedTexture.texture;
 		}
 
-		auto texModIt = RT64.texMods.find(recordedTexture.hash);
+		// Use the hash from the texture alias if it exists.
+		uint64_t textureHash = recordedTexture.hash;
+		auto texAliasIt = RT64.texHashAliasMap.find(textureHash);
+		if (texAliasIt != RT64.texHashAliasMap.end()) {
+			textureHash = texAliasIt->second;
+		}
+
+		// Use the texture mod for the matching texture hash.
+		auto texModIt = RT64.texMods.find(textureHash);
 		if (texModIt != RT64.texMods.end()) {
 			textureMod = texModIt->second;
 		}
@@ -1457,7 +1518,8 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	}
 
 	// Build material with applied mods.
-	instDesc.material = gfx_rt64_rapi_build_material(RT64.shaderProgram, linearFilter, cms, cmt);
+	instDesc.material = RT64.defaultMaterial;
+
 	if (RT64.graphNodeMod != nullptr) {
 		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, RT64.graphNodeMod, transform, false);
 	}
@@ -1466,10 +1528,32 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, textureMod, transform, true);
 	}
 
+	// Apply a higlight color if the material is selected.
 	if (highlightMaterial) {
 		instDesc.material.diffuseColorMix = { 1.0f, 0.0f, 1.0f, 0.5f };
 		instDesc.material.selfLight = { 1.0f, 1.0f, 1.0f };
 		instDesc.material.lightGroupMaskBits = 0;
+	}
+
+	// Copy the fog to the material.
+	uint32_t shaderId = RT64.shaderProgram->shaderId;
+	instDesc.material.fogColor = RT64.fogColor;
+	instDesc.material.fogMul = RT64.fogMul;
+	instDesc.material.fogOffset = RT64.fogOffset;
+	instDesc.material.fogEnabled = (shaderId & SHADER_OPT_FOG) != 0;
+
+	// Determine the right shader to use and create if it hasn't been loaded yet.
+	unsigned int filter = linearFilter ? RT64_SHADER_FILTER_LINEAR : RT64_SHADER_FILTER_POINT;
+	unsigned int hAddr = (cms & G_TX_CLAMP) ? RT64_SHADER_ADDRESSING_CLAMP : (cms & G_TX_MIRROR) ? RT64_SHADER_ADDRESSING_MIRROR : RT64_SHADER_ADDRESSING_WRAP;
+	unsigned int vAddr = (cmt & G_TX_CLAMP) ? RT64_SHADER_ADDRESSING_CLAMP : (cmt & G_TX_MIRROR) ? RT64_SHADER_ADDRESSING_MIRROR : RT64_SHADER_ADDRESSING_WRAP;
+	bool normalMap = instDesc.normalTexture != nullptr;
+	bool specularMap = instDesc.specularTexture != nullptr;
+	uint16_t variantKey = shaderVariantKey(raytrace, filter, hAddr, vAddr, normalMap, specularMap);
+	instDesc.shader = RT64.shaderProgram->shaderVariantMap[variantKey];
+	if (instDesc.shader == nullptr) {
+		gfx_rt64_rapi_preload_shader(shaderId, raytrace, filter, hAddr, vAddr, normalMap, specularMap);
+		instDesc.shader = RT64.shaderProgram->shaderVariantMap[variantKey];
+		printf("gfx_rt64_rapi_preload_shader(0x%X, %d, %d, %d, %d, %d, %d);\n", shaderId, raytrace, filter, hAddr, vAddr, normalMap, specularMap);
 	}
 
 	// Process the mesh that corresponds to the VBO.
@@ -1509,6 +1593,12 @@ static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_l
 	RT64_MATRIX4 transform;
 	memcpy(transform.m, transform_affine, sizeof(float) * 16);
 	gfx_rt64_rapi_draw_triangles_common(transform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true);
+
+#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
+	if (RT64.preloadLogicStep == 0) {
+		RT64.preloadLogicStep = 1;
+	}
+#endif
 }
 
 static void gfx_rt64_rapi_init(void) {
@@ -1617,17 +1707,17 @@ static void gfx_rt64_rapi_end_frame(void) {
 		light.attenuationRadius = 4000.0f;
 		light.attenuationExponent = 1.0f;
 		light.pointRadius = 25.0f;
-		light.specularIntensity = 0.65f;
+		light.specularColor = { 0.65f, 0.585f, 0.325f };
 		light.shadowOffset = 1000.0f;
 		light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
 	}
 
 	// Build lights array out of the static level lights and the dynamic lights.
-        int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
-        RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
-        assert(RT64.lightCount <= MAX_LIGHTS);
-        memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
-        memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
+	int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
+	RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
+	assert(RT64.lightCount <= MAX_LIGHTS);
+	memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
+	memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
     RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
 
 	// Draw frame.
@@ -1691,7 +1781,13 @@ static void gfx_rt64_rapi_end_frame(void) {
 		}
 	}
 
-	gfx_rt64_reset_logic_frame();
+#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
+	if (RT64.preloadLogicStep == 1) {
+		gfx_rt64_rapi_preload_shaders();
+		RT64.preloadLogicStep = 2;
+		printf("Preloading all shaders was triggered.\n");
+	}
+#endif
 }
 
 static void gfx_rt64_rapi_finish_render(void) {
@@ -1777,6 +1873,20 @@ static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
 	RT64.graphNodeMod = (RecordedMod *)(graph_node_mod);
 }
 
+extern "C" void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {
+	static bool loadedLayoutMods = false;
+	if (!loadedLayoutMods) {
+		gfx_rt64_load_geo_layout_mods();
+		loadedLayoutMods = true;
+	}
+
+    gfx_rt64_rapi_register_layout_graph_node(geoLayout, graphNode);
+}
+
+extern "C" void *gfx_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4]) {
+    return gfx_rt64_rapi_build_graph_node_mod(graphNode, modelview_matrix);
+}
+
 struct GfxWindowManagerAPI gfx_rt64_wapi = {
     gfx_rt64_wapi_init,
     gfx_rt64_wapi_set_keyboard_callbacks,
@@ -1812,8 +1922,6 @@ struct GfxRenderingAPI gfx_rt64_rapi = {
 	gfx_rt64_rapi_set_camera_matrix,
 	gfx_rt64_rapi_draw_triangles_ortho,
     gfx_rt64_rapi_draw_triangles_persp,
-    gfx_rt64_rapi_register_layout_graph_node,
-    gfx_rt64_rapi_build_graph_node_mod,
 	gfx_rt64_rapi_set_graph_node_mod,
     gfx_rt64_rapi_init,
 	gfx_rt64_rapi_on_resize,

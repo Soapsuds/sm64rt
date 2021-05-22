@@ -322,7 +322,11 @@
         {
             "materialMod": {
                 "ignoreNormalFactor": 1.0,
-                "specularIntensity": 0.0
+                "specularColor": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
             },
             "name": "actors/tree/snowy_pine_tree.rgba16"
         },
@@ -340,15 +344,23 @@
         },
         {
             "materialMod": {
-                "specularExponent": 5.0,
-                "specularIntensity": 5.0
+                "specularColor": [
+                    5.0,
+                    5.0,
+                    5.0
+                ],
+                "specularExponent": 5.0
             },
             "name": "actors/warp_pipe/warp_pipe_side.rgba16"
         },
         {
             "materialMod": {
-                "specularExponent": 5.0,
-                "specularIntensity": 5.0
+                "specularColor": [
+                    5.0,
+                    5.0,
+                    5.0
+                ],
+                "specularExponent": 5.0
             },
             "name": "actors/warp_pipe/warp_pipe_top.rgba16"
         },
@@ -659,7 +671,11 @@
         },
         {
             "materialMod": {
-                "specularIntensity": 0.25
+                "specularColor": [
+                    0.25,
+                    0.25,
+                    0.25
+                ]
             },
             "name": "levels/menu/main_menu_seg7.01018.rgba16"
         },
@@ -677,7 +693,11 @@
         },
         {
             "materialMod": {
-                "specularIntensity": 0.25
+                "specularColor": [
+                    0.25,
+                    0.25,
+                    0.25
+                ]
             },
             "name": "levels/menu/main_menu_seg7.04468.rgba16"
         },
@@ -989,8 +1009,12 @@
                     0.05000000074505806
                 ],
                 "shadowRayBias": 30.0,
-                "specularExponent": 5.0,
-                "specularIntensity": 1.5
+                "specularColor": [
+                    1.5,
+                    1.5,
+                    1.5
+                ],
+                "specularExponent": 5.0
             },
             "name": "textures/intro_raw/mario_face_shine.ia8"
         },
@@ -1012,7 +1036,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1042,7 +1070,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1072,7 +1104,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1102,7 +1138,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1132,7 +1172,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1162,7 +1206,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1192,7 +1240,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1222,7 +1274,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.16249999403953552,
+                    0.16249999403953552
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1252,7 +1308,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1282,7 +1342,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1312,7 +1376,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1342,7 +1410,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1372,7 +1444,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1402,7 +1478,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1432,7 +1512,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1462,7 +1546,11 @@
                     0.0
                 ],
                 "shadowOffset": 50.0,
-                "specularIntensity": 0.6499999761581421
+                "specularColor": [
+                    0.8125,
+                    0.8125,
+                    0.8125
+                ]
             },
             "materialMod": {
                 "lightGroupMaskBits": 0,
@@ -1547,25 +1635,41 @@
         },
         {
             "materialMod": {
-                "specularIntensity": 0.5
+                "specularColor": [
+                    0.5,
+                    0.5,
+                    0.5
+                ]
             },
             "name": "textures/outside/castle_grounds_textures.03800.rgba16"
         },
         {
             "materialMod": {
-                "specularIntensity": 0.5
+                "specularColor": [
+                    0.5,
+                    0.5,
+                    0.5
+                ]
             },
             "name": "textures/outside/castle_grounds_textures.04000.rgba16"
         },
         {
             "materialMod": {
-                "specularIntensity": 0.5
+                "specularColor": [
+                    0.5,
+                    0.5,
+                    0.5
+                ]
             },
             "name": "textures/outside/castle_grounds_textures.04800.rgba16"
         },
         {
             "materialMod": {
-                "specularIntensity": 0.5
+                "specularColor": [
+                    0.5,
+                    0.5,
+                    0.5
+                ]
             },
             "name": "textures/outside/castle_grounds_textures.08000.rgba16"
         },
@@ -1595,15 +1699,18 @@
                     0.0,
                     0.699999988079071
                 ],
-                "normalMapScale": 0.20000000298023224,
                 "reflectionFactor": 0.375,
                 "reflectionFresnelFactor": 0.75,
                 "refractionFactor": 0.949999988079071,
-                "solidAlphaMultiplier": 0.75
+                "solidAlphaMultiplier": 0.75,
+                "uvDetailScale": 0.20000000298023224
             },
             "name": "textures/segment2/segment2.11C58.rgba16",
             "normalMapMod": {
                 "name": "rt64/textures/normal_maps/water_nrm.rgba32"
+            },
+            "specularMapMod": {
+                "name": ""
             }
         },
         {
@@ -1614,15 +1721,18 @@
                     0.0,
                     0.699999988079071
                 ],
-                "normalMapScale": 0.4000000059604645,
                 "reflectionFactor": 0.375,
                 "reflectionFresnelFactor": 0.75,
                 "refractionFactor": 0.949999988079071,
-                "solidAlphaMultiplier": 0.75
+                "solidAlphaMultiplier": 0.75,
+                "uvDetailScale": 0.4000000059604645
             },
             "name": "textures/segment2/segment2.12458.rgba16",
             "normalMapMod": {
                 "name": "rt64/textures/normal_maps/water_nrm.rgba32"
+            },
+            "specularMapMod": {
+                "name": ""
             }
         },
         {
@@ -1724,19 +1834,31 @@
         },
         {
             "materialMod": {
-                "specularIntensity": 0.0
+                "specularColor": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
             },
             "name": "textures/snow/ccm_textures.02000.rgba16"
         },
         {
             "materialMod": {
-                "specularIntensity": 0.0
+                "specularColor": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
             },
             "name": "textures/snow/ccm_textures.06000.rgba16"
         },
         {
             "materialMod": {
-                "specularIntensity": 0.0
+                "specularColor": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
             },
             "name": "textures/snow/ccm_textures.08800.rgba16"
         },

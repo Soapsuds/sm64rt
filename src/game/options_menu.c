@@ -79,6 +79,7 @@ static const u8 optsCameraStr[][32] = {
 #ifdef RAPI_RT64
 static const u8 optsRT64Str[][32] = {
     { TEXT_OPT_RESSCALE },
+    { TEXT_OPT_MAXLIGHTS },
     { TEXT_OPT_SPHEREL },
     { TEXT_OPT_GI },
     { TEXT_OPT_GIWEIGHT },
@@ -249,10 +250,11 @@ static struct Option optsCamera[] = {
 #ifdef RAPI_RT64
 static struct Option optsRT64[] = {
     DEF_OPT_SCROLL( optsRT64Str[0], &configRT64ResScale, 10, 200, 1 ),
-    DEF_OPT_TOGGLE( optsRT64Str[1], &configRT64SphereLights ),
-    DEF_OPT_TOGGLE( optsRT64Str[2], &configRT64GI ),
-    DEF_OPT_SCROLL( optsRT64Str[3], &configRT64GIStrength, 5, 95, 1 ),
-    DEF_OPT_TOGGLE( optsRT64Str[4], &configRT64Denoiser ),
+    DEF_OPT_SCROLL( optsRT64Str[1], &configRT64MaxLights, 1, 16, 1 ),
+    DEF_OPT_TOGGLE( optsRT64Str[2], &configRT64SphereLights ),
+    DEF_OPT_TOGGLE( optsRT64Str[3], &configRT64GI ),
+    DEF_OPT_SCROLL( optsRT64Str[4], &configRT64GIStrength, 5, 95, 1 ),
+    DEF_OPT_TOGGLE( optsRT64Str[5], &configRT64Denoiser ),
     DEF_OPT_BUTTON( optsVideoStr[9], optvideo_apply ),
 };
 #endif

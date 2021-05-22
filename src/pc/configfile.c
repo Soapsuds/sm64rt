@@ -95,6 +95,7 @@ bool         configDiscordRPC    = true;
 #endif
 #ifdef RAPI_RT64
 unsigned int configRT64ResScale = 100;
+unsigned int configRT64MaxLights = 6;
 bool         configRT64SphereLights = false;
 bool         configRT64GI = false;
 unsigned int configRT64GIStrength = 80;
@@ -150,6 +151,7 @@ static const struct ConfigOption options[] = {
     #endif
     #ifdef RAPI_RT64
     {.name = "rt64_res_scale",       .type = CONFIG_TYPE_UINT, .uintValue = &configRT64ResScale},
+    {.name = "rt64_max_lights",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
     {.name = "rt64_sphere_lights",   .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
     {.name = "rt64_gi",              .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
     {.name = "rt64_gi_strength",     .type = CONFIG_TYPE_UINT, .uintValue = &configRT64GIStrength},
