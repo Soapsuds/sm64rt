@@ -1203,9 +1203,6 @@ static void gfx_rt64_wapi_init(const char *window_title) {
     RT64.farDist = 1000.0f;
     RT64.fovRadians = 0.75f;
 
-	// Load the geo layout mods from a file.
-	gfx_rt64_load_geo_layout_mods();
-
 	// Load the texture mods from a file.
 	gfx_rt64_load_texture_mods();
 
