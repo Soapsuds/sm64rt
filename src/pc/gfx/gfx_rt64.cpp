@@ -54,11 +54,6 @@ using json = nlohmann::json;
 #define GEO_LAYOUT_MODS_FILENAME		FS_BASEDIR "/rt64/geo_layout_mods.json"
 #define TEXTURE_MODS_FILENAME			FS_BASEDIR "/rt64/texture_mods.json"
 
-// HACK: Activates a workaround for D3D12 not giving the best performance if the raytracing pipeline is
-// compiled before drawing with RT at least one frame before. Investigation on the exact cause behind
-// this weird behavior is still ongoing.
-#define PRELOAD_IMPROVED_PERFORMANCE_HACK
-
 uint16_t shaderVariantKey(bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap) {
 	uint16_t key = 0, fact = 1;
 	key += raytrace ? fact : 0; fact *= 2;
@@ -145,9 +140,6 @@ struct {
 	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
     RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
     unsigned int dynamicLightCount;
-#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
-	unsigned int preloadLogicStep;
-#endif
 
 	// Ray picking data.
 	bool pickTextureNextFrame;
@@ -958,10 +950,6 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 				gfx_rt64_save_texture_mods();
 				gfx_rt64_save_level_lights();
 			}
-
-			if (wParam == VK_F6) {
-				gfx_rt64_rapi_preload_shaders();
-			}
 		}
 
 		onkeydown(wParam, lParam);
@@ -1115,9 +1103,6 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.pickTextureNextFrame = false;
 	RT64.pickTextureHighlight = false;
 	RT64.pickedTextureHash = 0;
-#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
-	RT64.preloadLogicStep = 0;
-#endif
 
 	// Initialize the triangle list index array used by all meshes.
 	unsigned int index = 0;
@@ -1208,6 +1193,9 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 
 	// Apply loaded configuration.
 	gfx_rt64_apply_config();
+
+	// Preload shaders to avoid ingame stuttering.
+	gfx_rt64_rapi_preload_shaders();
 }
 
 static void gfx_rt64_wapi_shutdown(void) {
@@ -1590,12 +1578,6 @@ static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_l
 	RT64_MATRIX4 transform;
 	memcpy(transform.m, transform_affine, sizeof(float) * 16);
 	gfx_rt64_rapi_draw_triangles_common(transform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true);
-
-#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
-	if (RT64.preloadLogicStep == 0) {
-		RT64.preloadLogicStep = 1;
-	}
-#endif
 }
 
 static void gfx_rt64_rapi_init(void) {
@@ -1777,14 +1759,6 @@ static void gfx_rt64_rapi_end_frame(void) {
 			RT64.lib.SetMaterialInspector(RT64.inspector, texMod->materialMod, textureName.c_str());
 		}
 	}
-
-#ifdef PRELOAD_IMPROVED_PERFORMANCE_HACK
-	if (RT64.preloadLogicStep == 1) {
-		gfx_rt64_rapi_preload_shaders();
-		RT64.preloadLogicStep = 2;
-		printf("Preloading all shaders was triggered.\n");
-	}
-#endif
 }
 
 static void gfx_rt64_rapi_finish_render(void) {
