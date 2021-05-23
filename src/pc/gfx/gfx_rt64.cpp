@@ -1046,7 +1046,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	// Setup library.
 	RT64.lib = RT64_LoadLibrary();
 	if (RT64.lib.handle == 0) {
-		gfx_rt64_error_message(window_title, "Failed to load library. Please make sure rt64.dll and dxil.dll are placed next to the game's executable and are up to date.");
+		gfx_rt64_error_message(window_title, "Failed to load library. Please make sure rt64lib.dll and dxil.dll are placed next to the game's executable and are up to date.");
 		abort();
 	}
 
