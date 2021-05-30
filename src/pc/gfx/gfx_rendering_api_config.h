@@ -13,6 +13,7 @@
 #   define GFX_SEPARATE_FOG
 #   define GFX_REQUIRE_TEXTURE_NAME
 #   define GFX_ENABLE_GRAPH_NODE_MODS
+#   define GFX_ENABLE_PREVIOUS_FRAME_MOTION
 #endif
 
 #endif

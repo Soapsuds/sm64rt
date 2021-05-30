@@ -38,8 +38,15 @@ struct GfxRenderingAPI {
 #else
     void (*set_camera_perspective)(float fov_degrees, float near_dist, float far_dist);
     void (*set_camera_matrix)(float matrix[4][4]);
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+    void (*set_camera_perspective_previous)(float fov_degrees, float near_dist, float far_dist);
+    void (*set_camera_matrix_previous)(float matrix[4][4]);
+    void (*draw_triangles_ortho)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided);
+    void (*draw_triangles_persp)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], float transform_affine_prev[4][4], bool double_sided);
+#else
     void (*draw_triangles_ortho)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided);
     void (*draw_triangles_persp)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided);
+#endif
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
     void (*set_graph_node_mod)(void *graph_node_mod);

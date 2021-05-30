@@ -1554,6 +1554,9 @@ void cur_obj_set_pos_to_home(void) {
     o->oPosX = o->oHomeX;
     o->oPosY = o->oHomeY;
     o->oPosZ = o->oHomeZ;
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+    o->header.gfx.skipInterpolationTimestamp = gGlobalTimer;
+#endif
 }
 
 void cur_obj_set_pos_to_home_and_stop(void) {

@@ -112,6 +112,10 @@ struct GraphNodePerspective
     /*0x1C*/ f32 fov;   // horizontal field of view in degrees
     /*0x20*/ s16 near;  // near clipping plane
     /*0x22*/ s16 far;   // far clipping plane
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+    f32 prevFov;
+    f32 prevTimestamp;
+#endif
 };
 
 /** An entry in the master list. It is a linked list of display lists
@@ -119,12 +123,15 @@ struct GraphNodePerspective
  */
 struct DisplayListNode
 {
-#ifdef GFX_ENABLE_GRAPH_NODE_MODS
-    void *graph_node_mod;
-#endif
     Mtx *transform;
     void *displayList;
     struct DisplayListNode *next;
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+    void *graphNodeMod;
+#endif
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+    Mtx *transformPrev;
+#endif
 };
 
 /** GraphNode that manages the 8 top-level display lists that will be drawn
@@ -193,6 +200,12 @@ struct GraphNodeCamera
     /*0x34*/ Mat4 *matrixPtr; // pointer to look-at matrix of this camera as a Mat4
     /*0x38*/ s16 roll; // roll in look at matrix. Doesn't account for light direction unlike rollScreen.
     /*0x3A*/ s16 rollScreen; // rolls screen while keeping the light direction consistent
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+    Vec3f prevPos;
+    Vec3f prevFocus;
+    u32 prevTimestamp;
+    Mat4 *matrixPtrPrev;
+#endif
 };
 
 /** GraphNode that translates and rotates its children.
@@ -231,7 +244,12 @@ struct GraphNodeRotation
     /*0x00*/ struct GraphNode node;
     /*0x14*/ void *displayList;
     /*0x18*/ Vec3s rotation;
+#ifndef GFX_ENABLE_PREVIOUS_FRAME_MOTION
     u8 pad1E[2];
+#else
+    Vec3s prevRotation;
+    u32 prevTimestamp;
+#endif
 };
 
 /** GraphNode part that transforms itself and its children based on animation

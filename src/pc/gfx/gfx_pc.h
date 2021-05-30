@@ -28,6 +28,11 @@ void gfx_shutdown(void);
 #ifdef GFX_SEPARATE_PROJECTIONS
 void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist);
 void gfx_set_camera_matrix(float mat[4][4]);
+#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+#define G_MTX_PREV   0x08
+void gfx_set_camera_perspective_previous(float fov_degrees, float near_dist, float far_dist);
+void gfx_set_camera_matrix_previous(float mat[4][4]);
+#endif
 #endif
 
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
