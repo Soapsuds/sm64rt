@@ -110,6 +110,13 @@ struct RecordedCamera {
 	float farDist;
 };
 
+struct RecordedDisplayList {
+	RT64_MATRIX4 prevTransform;
+	RT64_MATRIX4 newTransform;
+	bool prevValid = false;
+	bool newValid = false;
+};
+
 //	Convention of bits for different lights.
 //		1 	- Directional Tier A
 //		2 	- Directional Tier B
@@ -143,6 +150,7 @@ struct {
 	std::unordered_map<uint64_t, RecordedMesh> dynamicMeshes;
 	std::unordered_map<uint64_t, RecordedMeshKey> dynamicMeshKeys;
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
+	std::unordered_map<uint32_t, RecordedDisplayList> displayLists;
 	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
 	int cachedMeshesPerFrame;
 	RT64_LIGHT lights[MAX_LIGHTS];
@@ -174,6 +182,7 @@ struct {
 	// Camera.
 	RecordedCamera camera;
 	RecordedCamera prevCamera;
+	bool prevCameraValid = false;
 
 	// Matrices.
 	RT64_MATRIX4 identityTransform;
@@ -1197,7 +1206,6 @@ static void gfx_rt64_wapi_init(const char *window_title) {
     defaultCamera.farDist = 1000.0f;
     defaultCamera.fovRadians = 0.75f;
 	RT64.camera = defaultCamera;
-	RT64.prevCamera = defaultCamera;
 
 	// Load the texture mods from a file.
 	gfx_rt64_load_texture_mods();
@@ -1463,7 +1471,7 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **norm
 	}
 }
 
-static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, RT64_MATRIX4 transform_prev, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace) {
+static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace, uint32_t uid) {
 	RecordedMod *textureMod = nullptr;
 	bool linearFilter = false;
 	uint32_t cms = 0, cmt = 0;
@@ -1474,7 +1482,12 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, RT64_MAT
 
 	// Store the transforms.
 	RT64.instanceTransformsCur[instanceIndex] = transform;
-	RT64.instanceTransformsPrev[instanceIndex] = transform_prev;
+
+	// Retrieve the previous transform for the display list with this UID and store the current one.
+	auto &displayList = RT64.displayLists[uid];
+	RT64.instanceTransformsPrev[instanceIndex] = displayList.prevValid ? displayList.prevTransform : transform;
+	displayList.newTransform = transform;
+	displayList.newValid = true;
 
 	// Describe the instance.
 	RT64_INSTANCE_DESC &instDesc = RT64.instanceDescs[instanceIndex];
@@ -1578,21 +1591,19 @@ void gfx_rt64_rapi_set_fog(uint8_t fog_r, uint8_t fog_g, uint8_t fog_b, int16_t 
 	RT64.fogOffset = fog_offset;
 }
 
-static void gfx_rt64_rapi_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided) {
-	gfx_rt64_rapi_draw_triangles_common(RT64.identityTransform, RT64.identityTransform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, false);
+static void gfx_rt64_rapi_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, uint32_t uid) {
+	gfx_rt64_rapi_draw_triangles_common(RT64.identityTransform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, false, uid);
 }
 
-static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], float transform_affine_prev[4][4], bool double_sided) {
+static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, uint32_t uid) {
 	// Stop considering the orthographic projection triangles as background as soon as perspective triangles are drawn.
 	if (RT64.background) {
 		RT64.background = false;
 	}
 
 	RT64_MATRIX4 transform;
-	RT64_MATRIX4 transform_prev;
 	memcpy(transform.m, transform_affine, sizeof(float) * 16);
-	memcpy(transform_prev.m, transform_affine_prev, sizeof(float) * 16);
-	gfx_rt64_rapi_draw_triangles_common(transform, transform_prev, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true);
+	gfx_rt64_rapi_draw_triangles_common(transform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true, uid);
 }
 
 static void gfx_rt64_rapi_init(void) {
@@ -1606,6 +1617,22 @@ static void gfx_rt64_rapi_shutdown(void) {
 }
 
 static void gfx_rt64_rapi_start_frame(void) {
+	// Display list cleanup.
+	auto dlIt = RT64.displayLists.begin();
+	while (dlIt != RT64.displayLists.end()) {
+		if (dlIt->second.newValid) {
+			dlIt->second.prevTransform = dlIt->second.newTransform;
+			dlIt->second.prevValid = true;
+			dlIt->second.newValid = false;
+		}
+		else {
+			dlIt = RT64.displayLists.erase(dlIt);
+			continue;
+		}
+
+		dlIt++;
+	}
+
 	// Mesh key cleanup.
 	auto keyIt = RT64.dynamicMeshKeys.begin();
 	while (keyIt != RT64.dynamicMeshKeys.end()) {
@@ -1712,8 +1739,19 @@ static void gfx_rt64_rapi_set_special_stage_lights(int levelIndex, int areaIndex
 }
 
 void gfx_rt64_rapi_draw_frame(float frameWeight) {
-	RT64_MATRIX4 viewMatrix = gfx_rt64_lerp_matrix(RT64.prevCamera.viewMatrix, RT64.camera.viewMatrix, frameWeight);
-	float fovRadians = gfx_rt64_lerp_float(RT64.prevCamera.fovRadians, RT64.camera.fovRadians, frameWeight);
+	RT64_MATRIX4 viewMatrix;
+	float fovRadians;
+
+	// Calculate the interpolated camera.
+	if (RT64.prevCameraValid) {
+		viewMatrix = gfx_rt64_lerp_matrix(RT64.prevCamera.viewMatrix, RT64.camera.viewMatrix, frameWeight);
+		fovRadians = gfx_rt64_lerp_float(RT64.prevCamera.fovRadians, RT64.camera.fovRadians, frameWeight);
+	}
+	// Just use the current camera.
+	else {
+		viewMatrix = RT64.camera.viewMatrix;
+		fovRadians = RT64.camera.fovRadians;
+	}
 
 	// Calculate the interpolated frame.
 	RT64.lib.SetViewPerspective(RT64.view, viewMatrix, fovRadians, RT64.camera.nearDist, RT64.camera.farDist);
@@ -1810,32 +1848,26 @@ static void gfx_rt64_rapi_end_frame(void) {
 			RT64.lib.SetMaterialInspector(RT64.inspector, texMod->materialMod, textureName.c_str());
 		}
 	}
+
+	// Camera interpolation reset.
+	RT64.prevCamera = RT64.camera;
+	RT64.prevCameraValid = true;
 }
 
 static void gfx_rt64_rapi_finish_render(void) {
 
 }
 
-static void gfx_rt64_rapi_set_camera_perspective(float fov_degrees, float near_dist, float far_dist) {
+static void gfx_rt64_rapi_set_camera_perspective(float fov_degrees, float near_dist, float far_dist, bool can_interpolate) {
     RT64.camera.fovRadians = (fov_degrees / 180.0f) * M_PI;
 	RT64.camera.nearDist = near_dist;
     RT64.camera.farDist = far_dist;
+	RT64.prevCameraValid = RT64.prevCameraValid && can_interpolate;
 }
 
 static void gfx_rt64_rapi_set_camera_matrix(float matrix[4][4]) {
 	memcpy(&RT64.camera.viewMatrix.m, matrix, sizeof(float) * 16);
     gd_inverse_mat4f(&RT64.camera.viewMatrix.m, &RT64.camera.invViewMatrix.m);
-}
-
-static void gfx_rt64_rapi_set_camera_perspective_previous(float fov_degrees, float near_dist, float far_dist) {
-    RT64.prevCamera.fovRadians = (fov_degrees / 180.0f) * M_PI;
-	RT64.prevCamera.nearDist = near_dist;
-    RT64.prevCamera.farDist = far_dist;
-}
-
-static void gfx_rt64_rapi_set_camera_matrix_previous(float matrix[4][4]) {
-	memcpy(&RT64.prevCamera.viewMatrix.m, matrix, sizeof(float) * 16);
-    gd_inverse_mat4f(&RT64.prevCamera.viewMatrix.m, &RT64.prevCamera.invViewMatrix.m);
 }
 
 static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *graphNode) {
@@ -1953,8 +1985,6 @@ struct GfxRenderingAPI gfx_rt64_rapi = {
 	gfx_rt64_rapi_set_fog,
 	gfx_rt64_rapi_set_camera_perspective,
 	gfx_rt64_rapi_set_camera_matrix,
-	gfx_rt64_rapi_set_camera_perspective_previous,
-	gfx_rt64_rapi_set_camera_matrix_previous,
 	gfx_rt64_rapi_draw_triangles_ortho,
     gfx_rt64_rapi_draw_triangles_persp,
 	gfx_rt64_rapi_set_graph_node_mod,

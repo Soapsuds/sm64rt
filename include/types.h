@@ -107,6 +107,9 @@ struct GraphNode
     /*0x08*/ struct GraphNode *next;
     /*0x0C*/ struct GraphNode *parent;
     /*0x10*/ struct GraphNode *children;
+#ifdef GFX_SEPARATE_PROJECTIONS
+    u32 uid;
+#endif
 };
 
 // struct AnimInfo?
@@ -119,12 +122,6 @@ struct GraphNodeObject_sub
     /*0x0A 0x42*/ u16 animTimer;
     /*0x0C 0x44*/ s32 animFrameAccelAssist;
     /*0x10 0x48*/ s32 animAccel;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    s16 prevAnimFrame;
-    s16 prevAnimID;
-    u32 prevAnimFrameTimestamp;
-    struct Animation *prevAnimPtr;
-#endif
 };
 
 struct GraphNodeObject
@@ -140,17 +137,7 @@ struct GraphNodeObject
     /*0x4C*/ struct SpawnInfo *unk4C;
     /*0x50*/ Mat4 *throwMatrix; // matrix ptr
     /*0x54*/ Vec3f cameraToObject;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    Vec3s prevAngle;
-    Vec3f prevPos;
-    u32 prevTimestamp;
-    Vec3f prevShadowPos;
-    u32 prevShadowPosTimestamp;
-    Vec3f prevScale;
-    u32 prevScaleTimestamp;
-    Mat4 prevThrowMatrix;
-    u32 prevThrowMatrixTimestamp;
-    Mat4 *throwMatrixInterpolated;
+#ifdef GFX_SEPARATE_PROJECTIONS
     u32 skipInterpolationTimestamp;
 #endif
 };
@@ -263,12 +250,6 @@ struct Surface
     } normal;
     /*0x28*/ f32 originOffset;
     /*0x2C*/ struct Object *object;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    Vec3s prevVertex1;
-    Vec3s prevVertex2;
-    Vec3s prevVertex3;
-    u32 modifiedTimestamp;
-#endif
 };
 
 struct MarioBodyState

@@ -135,16 +135,6 @@ static struct RSP {
     struct LoadedVertex loaded_vertices[MAX_VERTICES + 4];
 } rsp;
 
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-static struct RSPPrev {
-    float modelview_matrix_stack[11][4][4];
-    uint8_t modelview_matrix_stack_size;
-    float MP_matrix[4][4];
-    float P_matrix[4][4];
-    struct LoadedVertex loaded_vertices[MAX_VERTICES + 4];
-} rsp_prev;
-#endif
-
 static struct RDP {
     const uint8_t *palette;
     struct {
@@ -241,41 +231,26 @@ static struct {
     bool double_sided;
     bool persp_triangles_drawn;
     bool camera_matrix_set;
-    Matrices cur;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    Matrices prev;
-#endif
+    s32 current_uid;
+    Matrices mat;
 } separate_projections;
 
-void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist) {
-    gfx_rapi->set_camera_perspective(fov_degrees, near_dist, far_dist);
+void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist, bool can_interpolate) {
+    gfx_rapi->set_camera_perspective(fov_degrees, near_dist, far_dist, can_interpolate);
 }
 
 void gfx_set_camera_matrix(float mat[4][4]) {
     // Store camera matrix.
-    memcpy(separate_projections.cur.camera_matrix, mat, sizeof(float) * 16);
-    gfx_rapi->set_camera_matrix(separate_projections.cur.camera_matrix);
+    memcpy(separate_projections.mat.camera_matrix, mat, sizeof(float) * 16);
+    gfx_rapi->set_camera_matrix(separate_projections.mat.camera_matrix);
 
     // Since this call comes from the graph node, store it so we can reverse its effect 
     // on the model view matrices later.
-    memcpy(separate_projections.cur.graph_view_matrix, mat, sizeof(float) * 16);
-    gd_inverse_mat4f(&separate_projections.cur.graph_view_matrix, &separate_projections.cur.graph_inv_view_matrix);
+    memcpy(separate_projections.mat.graph_view_matrix, mat, sizeof(float) * 16);
+    gd_inverse_mat4f(&separate_projections.mat.graph_view_matrix, &separate_projections.mat.graph_inv_view_matrix);
 
     separate_projections.camera_matrix_set = true;
 }
-
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-void gfx_set_camera_perspective_previous(float fov_degrees, float near_dist, float far_dist) {
-    gfx_rapi->set_camera_perspective_previous(fov_degrees, near_dist, far_dist);
-}
-
-void gfx_set_camera_matrix_previous(float mat[4][4]) {
-    memcpy(separate_projections.prev.camera_matrix, mat, sizeof(float) * 16);
-    gfx_rapi->set_camera_matrix_previous(separate_projections.prev.camera_matrix);
-    memcpy(separate_projections.prev.graph_view_matrix, mat, sizeof(float) * 16);
-    gd_inverse_mat4f(&separate_projections.prev.graph_view_matrix, &separate_projections.prev.graph_inv_view_matrix);
-}
-#endif
 
 bool is_affine(float mat[4][4]) {
     return (mat[0][3] == 0.0f) && (mat[1][3] == 0.0f) && (mat[2][3] == 0.0f) && (mat[3][3] == 1.0f);
@@ -358,14 +333,10 @@ static void gfx_flush(void) {
         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
 #else
         if (separate_projections.is_ortho) {
-            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided);
+            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided, separate_projections.current_uid);
         }
         else {
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-            gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.cur.model_matrix, separate_projections.prev.model_matrix, separate_projections.double_sided);
-#else
-            gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.cur.model_matrix, separate_projections.double_sided);
-#endif
+            gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.mat.model_matrix, separate_projections.double_sided, separate_projections.current_uid);
             separate_projections.persp_triangles_drawn = true;
         }
 
@@ -874,84 +845,7 @@ static void gfx_matrix_mul(float res[4][4], const float a[4][4], const float b[4
     memcpy(res, tmp, sizeof(tmp));
 }
 
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-void gfx_sp_matrix_previous(uint8_t parameters, const int32_t *addr) {
-    float matrix[4][4];
-    memcpy(matrix, addr, sizeof(matrix));
-    if (parameters & G_MTX_PROJECTION) {
-        assert(false && "Unsupported");
-    }
-    else {
-        if (parameters & G_MTX_LOAD) {
-            memcpy(rsp_prev.modelview_matrix_stack[rsp_prev.modelview_matrix_stack_size - 1], matrix, sizeof(matrix));
-        }
-        else {
-            assert(false && "Unsupported");
-        }
-    }
-
-#ifdef GFX_SEPARATE_PROJECTIONS
-    gfx_matrix_mul(separate_projections.prev.model_matrix, rsp_prev.modelview_matrix_stack[rsp_prev.modelview_matrix_stack_size - 1], separate_projections.prev.graph_inv_view_matrix);
-    gfx_matrix_mul(separate_projections.prev.model_matrix, separate_projections.prev.model_matrix, separate_projections.prev.extra_model_matrix);
-#endif
-    /*if (parameters & G_MTX_PROJECTION) {
-        if (parameters & G_MTX_LOAD) {
-            memcpy(rsp.P_matrix_prev, matrix, sizeof(matrix));
-#ifdef GFX_SEPARATE_PROJECTIONS
-            gd_set_identity_mat4(&separate_projections.prev.extra_model_matrix);
-#endif
-        } else {
-            gfx_matrix_mul(rsp.P_matrix_prev, matrix, rsp.P_matrix_prev);
-#ifdef GFX_SEPARATE_PROJECTIONS
-            if (!separate_projections.is_ortho && is_affine(matrix) && !is_identity(matrix)) {
-                if (separate_projections.camera_matrix_set && !separate_projections.persp_triangles_drawn) {
-                    gfx_matrix_mul(separate_projections.prev.modified_camera_matrix, separate_projections.prev.camera_matrix, matrix);
-                    gfx_rapi->set_camera_matrix_previous(separate_projections.prev.modified_camera_matrix);
-                }
-                else {
-                    gfx_matrix_mul(separate_projections.prev.extra_model_matrix, separate_projections.prev.extra_model_matrix, matrix);
-                }
-            }
-#endif
-        }
-    } else { // G_MTX_MODELVIEW
-        if ((parameters & G_MTX_PUSH) && rsp.modelview_matrix_stack_size_prev < 11) {
-            assert(false && "Unsupported");
-            ++rsp.modelview_matrix_stack_size_prev;
-            memcpy(rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1], rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 2], sizeof(matrix));
-        }
-        if (parameters & G_MTX_LOAD) {
-            printf("C %d\n", rsp.modelview_matrix_stack_size_prev);
-            memcpy(rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1], matrix, sizeof(matrix));
-            printf("D %d\n", rsp.modelview_matrix_stack_size_prev);
-        } else {
-            assert(false && "Unsupported");
-            gfx_matrix_mul(rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1], matrix, rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1]);
-        }
-    }
-*/
-/*
-    printf("E %d\n", rsp.modelview_matrix_stack_size_prev);
-    gfx_matrix_mul(rsp.MP_matrix_prev, rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1], rsp.P_matrix_prev);
-    printf("F %d\n", rsp.modelview_matrix_stack_size_prev);
-#ifdef GFX_SEPARATE_PROJECTIONS
-    gfx_matrix_mul(separate_projections.prev.model_matrix, rsp.modelview_matrix_stack_prev[rsp.modelview_matrix_stack_size_prev - 1], separate_projections.prev.graph_inv_view_matrix);
-    printf("G %d\n", rsp.modelview_matrix_stack_size_prev);
-    gfx_matrix_mul(separate_projections.prev.model_matrix, separate_projections.prev.model_matrix, separate_projections.prev.extra_model_matrix);
-    printf("H %d\n", rsp.modelview_matrix_stack_size_prev);
-#endif
-*/
-}
-#endif
-
 static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    if (parameters & G_MTX_PREV) {
-        gfx_sp_matrix_previous(parameters, addr);
-        return;
-    }
-#endif
-
     float matrix[4][4];
 #if 0
     // Original code when fixed point matrices were used
@@ -971,7 +865,7 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
         if (parameters & G_MTX_LOAD) {
             memcpy(rsp.P_matrix, matrix, sizeof(matrix));
 #ifdef GFX_SEPARATE_PROJECTIONS
-            gd_set_identity_mat4(&separate_projections.cur.extra_model_matrix);
+            gd_set_identity_mat4(&separate_projections.mat.extra_model_matrix);
             separate_projections.is_ortho = (matrix[3][3] != 0.0f);
 #endif
         } else {
@@ -998,12 +892,12 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
             if (!separate_projections.is_ortho && is_affine(matrix) && !is_identity(matrix)) {
                 // Fixes Lakitu camera shake and Bowser key cutscene by adding the offset to the camera matrix.
                 if (separate_projections.camera_matrix_set && !separate_projections.persp_triangles_drawn) {
-                    gfx_matrix_mul(separate_projections.cur.modified_camera_matrix, separate_projections.cur.camera_matrix, matrix);
-                    gfx_rapi->set_camera_matrix(separate_projections.cur.modified_camera_matrix);
+                    gfx_matrix_mul(separate_projections.mat.modified_camera_matrix, separate_projections.mat.camera_matrix, matrix);
+                    gfx_rapi->set_camera_matrix(separate_projections.mat.modified_camera_matrix);
                 }
                 // Fixes Goddard by adding the offset to the model matrix.
                 else {
-                    gfx_matrix_mul(separate_projections.cur.extra_model_matrix, separate_projections.cur.extra_model_matrix, matrix);
+                    gfx_matrix_mul(separate_projections.mat.extra_model_matrix, separate_projections.mat.extra_model_matrix, matrix);
                 }
             }
 #endif
@@ -1023,8 +917,8 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-    gfx_matrix_mul(separate_projections.cur.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.cur.graph_inv_view_matrix);
-    gfx_matrix_mul(separate_projections.cur.model_matrix, separate_projections.cur.model_matrix, separate_projections.cur.extra_model_matrix);
+    gfx_matrix_mul(separate_projections.mat.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.mat.graph_inv_view_matrix);
+    gfx_matrix_mul(separate_projections.mat.model_matrix, separate_projections.mat.model_matrix, separate_projections.mat.extra_model_matrix);
 #endif
 }
 
@@ -1036,8 +930,8 @@ static void gfx_sp_pop_matrix(uint32_t count) {
                 gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-                gfx_matrix_mul(separate_projections.cur.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.cur.graph_inv_view_matrix);
-                gfx_matrix_mul(separate_projections.cur.model_matrix, separate_projections.cur.model_matrix, separate_projections.cur.extra_model_matrix);
+                gfx_matrix_mul(separate_projections.mat.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.mat.graph_inv_view_matrix);
+                gfx_matrix_mul(separate_projections.mat.model_matrix, separate_projections.mat.model_matrix, separate_projections.mat.extra_model_matrix);
 #endif
             }
         }
@@ -1052,19 +946,19 @@ static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
 #ifdef GFX_SEPARATE_PROJECTIONS
     if (!separate_projections.model_matrix_used) {
         if (dest_index > 0) {
-            inverse_affine(&separate_projections.cur.model_matrix, &separate_projections.cur.inv_model_matrix);
-            gfx_matrix_mul(separate_projections.cur.offset_matrix, separate_projections.cur.prev_model_matrix, separate_projections.cur.inv_model_matrix);
+            inverse_affine(&separate_projections.mat.model_matrix, &separate_projections.mat.inv_model_matrix);
+            gfx_matrix_mul(separate_projections.mat.offset_matrix, separate_projections.mat.prev_model_matrix, separate_projections.mat.inv_model_matrix);
 
             for (size_t i = 0; i < dest_index; i++) {
-                transform_loaded_vertex(i, &separate_projections.cur.offset_matrix);
+                transform_loaded_vertex(i, &separate_projections.mat.offset_matrix);
             }
 
             for (size_t i = dest_index + n_vertices; i < MAX_VERTICES; i++) {
-                transform_loaded_vertex(i, &separate_projections.cur.offset_matrix);
+                transform_loaded_vertex(i, &separate_projections.mat.offset_matrix);
             }
         }
 
-        memcpy(separate_projections.cur.prev_model_matrix, separate_projections.cur.model_matrix, sizeof(float) * 16);
+        memcpy(separate_projections.mat.prev_model_matrix, separate_projections.mat.model_matrix, sizeof(float) * 16);
         separate_projections.model_matrix_used = true;
     }
 #endif
@@ -2109,9 +2003,18 @@ static void gfx_run_dl(Gfx* cmd) {
                 gfx_dp_set_color_image(C0(21, 3), C0(19, 2), C0(0, 11), seg_addr(cmd->words.w1));
                 break;
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
-            case G_NOOP:
-                gfx_rapi->set_graph_node_mod((void *)(cmd->words.w1));
+            case G_NOOP: {
+                GraphNodeGfxInfo *gfxInfo = (GraphNodeGfxInfo *)(cmd->words.w1);
+                if (gfxInfo != NULL) {
+                    separate_projections.current_uid = gfxInfo->UID;
+                    gfx_rapi->set_graph_node_mod(gfxInfo->graphNodeMod);
+                }
+                else {
+                    separate_projections.current_uid = 0;
+                    gfx_rapi->set_graph_node_mod(NULL);
+                }
                 break;
+            }
 #endif
         }
         ++cmd;
@@ -2122,9 +2025,6 @@ static void gfx_sp_reset() {
     rsp.modelview_matrix_stack_size = 1;
     rsp.current_num_lights = 2;
     rsp.lights_changed = true;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    rsp_prev.modelview_matrix_stack_size = 1;
-#endif
 }
 
 void gfx_get_dimensions(uint32_t *width, uint32_t *height) {
@@ -2192,19 +2092,11 @@ void gfx_start_frame(void) {
     gfx_current_dimensions.aspect_ratio = (float)gfx_current_dimensions.width / (float)gfx_current_dimensions.height;
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-    gd_set_identity_mat4(&separate_projections.cur.extra_model_matrix);
-    gd_set_identity_mat4(&separate_projections.cur.camera_matrix);
-    gd_set_identity_mat4(&separate_projections.cur.graph_view_matrix);
-    gd_set_identity_mat4(&separate_projections.cur.graph_inv_view_matrix);
-    gfx_rapi->set_camera_matrix(separate_projections.cur.camera_matrix);
-
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-    gd_set_identity_mat4(&separate_projections.prev.extra_model_matrix);
-    gd_set_identity_mat4(&separate_projections.prev.camera_matrix);
-    gd_set_identity_mat4(&separate_projections.prev.graph_view_matrix);
-    gd_set_identity_mat4(&separate_projections.prev.graph_inv_view_matrix);
-    gfx_rapi->set_camera_matrix_previous(separate_projections.prev.camera_matrix);
-#endif
+    gd_set_identity_mat4(&separate_projections.mat.extra_model_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.camera_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.graph_view_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.graph_inv_view_matrix);
+    gfx_rapi->set_camera_matrix(separate_projections.mat.camera_matrix);
 
     separate_projections.camera_matrix_set = false;
     separate_projections.is_ortho = false;

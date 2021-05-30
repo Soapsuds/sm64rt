@@ -657,7 +657,7 @@ struct LakituState
     /// Mario's action from the previous frame. Only used to determine if Mario just finished a dive.
     /*0xB8*/ u32 lastFrameAction;
     /*0xBC*/ s16 unused;
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
+#ifdef GFX_SEPARATE_PROJECTIONS
     u32 skipCameraInterpolationTimestamp;
 #endif
 };

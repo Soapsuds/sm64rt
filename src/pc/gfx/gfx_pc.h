@@ -26,16 +26,17 @@ void gfx_precache_textures(void);
 void gfx_shutdown(void);
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist);
+#include <stdbool.h>
+void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist, bool can_interpolate);
 void gfx_set_camera_matrix(float mat[4][4]);
-#ifdef GFX_ENABLE_PREVIOUS_FRAME_MOTION
-#define G_MTX_PREV   0x08
-void gfx_set_camera_perspective_previous(float fov_degrees, float near_dist, float far_dist);
-void gfx_set_camera_matrix_previous(float mat[4][4]);
-#endif
 #endif
 
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
+typedef struct {
+    u32 UID;
+    void *graphNodeMod;
+} GraphNodeGfxInfo;
+
 void gfx_register_layout_graph_node(void *geo_layout, void *graph_node);
 void *gfx_build_graph_node_mod(void *graph_node, float modelview_matrix[4][4]);
 #endif
