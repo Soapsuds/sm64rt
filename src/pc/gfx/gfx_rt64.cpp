@@ -1480,12 +1480,10 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	int instanceIndex = gfx_rt64_rapi_add_instance();
 	RT64_INSTANCE *instance = RT64.instances[instanceIndex];
 
-	// Store the transforms.
-	RT64.instanceTransformsCur[instanceIndex] = transform;
-
 	// Retrieve the previous transform for the display list with this UID and store the current one.
 	auto &displayList = RT64.displayLists[uid];
 	RT64.instanceTransformsPrev[instanceIndex] = displayList.prevValid ? displayList.prevTransform : transform;
+	RT64.instanceTransformsCur[instanceIndex] = transform;
 	displayList.newTransform = transform;
 	displayList.newValid = true;
 

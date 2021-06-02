@@ -126,7 +126,7 @@ struct GraphNodeHeldObject *gCurGraphNodeHeldObject = NULL;
 u16 gAreaUpdateCounter = 0;
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-s32 gCurGraphNodeUID = 0;
+s32 gCurGraphNodeUIDHash = 0;
 #endif
 
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
@@ -201,7 +201,7 @@ static void geo_append_display_list(void *displayList, s16 layer) {
             alloc_only_pool_alloc(gDisplayListHeap, sizeof(struct DisplayListNode));
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-        listNode->gfxInfo.UID = gCurGraphNodeUID;
+        listNode->gfxInfo.UID = gCurGraphNodeUIDHash;
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
         listNode->gfxInfo.graphNodeMod = gCurGraphNodeMod;
@@ -399,7 +399,6 @@ static void geo_process_translation(struct GraphNodeTranslation *node) {
     gMatStackIndex++;
     mtxf_to_mtx(mtx, gMatStack[gMatStackIndex]);
     gMatStackFixed[gMatStackIndex] = mtx;
-    void *graphNodeMod = gfx_build_graph_node_mod(node, gMatStack[gMatStackIndex]);
     if (node->displayList != NULL) {
         geo_append_display_list(node->displayList, node->node.flags >> 8);
     }
@@ -1015,8 +1014,8 @@ void geo_process_node_and_siblings(struct GraphNode *firstNode) {
         if (curGraphNode->flags & GRAPH_RENDER_ACTIVE) {
 #ifdef GFX_SEPARATE_PROJECTIONS
             const u32 Prime = 97;
-            u32 previousGraphNodeUID = gCurGraphNodeUID;
-            gCurGraphNodeUID = (Prime * previousGraphNodeUID) + curGraphNode->uid;
+            u32 previousGraphNodeUID = gCurGraphNodeUIDHash;
+            gCurGraphNodeUIDHash = (Prime * previousGraphNodeUID) + curGraphNode->uid;
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
             void *previousGraphNodeMod = gCurGraphNodeMod;
@@ -1093,7 +1092,7 @@ void geo_process_node_and_siblings(struct GraphNode *firstNode) {
                 }
             }
 #ifdef GFX_SEPARATE_PROJECTIONS
-            gCurGraphNodeUID = previousGraphNodeUID;
+            gCurGraphNodeUIDHash = previousGraphNodeUID;
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
             if (graphNodeMod != NULL) {
