@@ -73,13 +73,16 @@ struct ShaderProgram {
 };
 
 struct RecordedMesh {
-    RT64_MESH *mesh;
-    uint32_t vertexCount;
-	uint32_t vertexStride;
-    uint32_t indexCount;
-    int lifetime;
-    bool inUse;
-    bool raytraceable;
+	float *prevVertexBuffer = nullptr;
+	float *newVertexBuffer = nullptr;
+	bool newVertexBufferValid = false;
+    RT64_MESH *mesh = nullptr;
+    uint32_t vertexCount = 0;
+	uint32_t vertexStride = 0;
+    uint32_t indexCount = 0;
+    int lifetime = 0;
+    bool inUse = false;
+    bool raytraceable = false;
 };
 
 struct RecordedMeshKey {
@@ -111,6 +114,8 @@ struct RecordedCamera {
 };
 
 struct RecordedDisplayList {
+	std::vector<uint64_t> prevMeshes;
+	std::vector<uint64_t> newMeshes;
 	RT64_MATRIX4 prevTransform;
 	RT64_MATRIX4 newTransform;
 	bool prevValid = false;
@@ -1065,8 +1070,8 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RegisterClass(&wc);
 
 	// Create window.
-	const int Width = 1920;
-	const int Height = 1080;
+	const int Width = 1280;
+	const int Height = 720;
 	RECT rect;
 	UINT dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
 	rect.left = (GetSystemMetrics(SM_CXSCREEN) - Width) / 2;
@@ -1322,7 +1327,7 @@ static void gfx_rt64_rapi_set_scissor(int x, int y, int width, int height) {
 static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
 }
 
-static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytraceable) {
+static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytraceable, RecordedDisplayList &displayList) {
 	assert(RT64.shaderProgram != nullptr);
 
     const bool useTexture = RT64.shaderProgram->usedTextures[0] || RT64.shaderProgram->usedTextures[1];
@@ -1338,9 +1343,11 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	
 	// Calculate hash and use it as key.
     XXHash64 hashStream(0);
-	hashStream.add(buf_vbo, buf_vbo_len * sizeof(float));
+	size_t vertexBufferSize = buf_vbo_len * sizeof(float);
+	hashStream.add(buf_vbo, vertexBufferSize);
     uint64_t key = hashStream.hash();
 
+/*
 	// Check for static mesh first.
 	auto staticMeshIt = RT64.staticMeshes.find(key);
 	if (staticMeshIt != RT64.staticMeshes.end()) {
@@ -1366,6 +1373,36 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 		RT64.cachedMeshesPerFrame++;
 		return staticMesh.mesh;
 	}
+*/
+	if (displayList.prevValid) {
+		uint64_t prevKey = displayList.prevMeshKeys[displayList.newMeshKeys.size()];
+		if (prevKey != key) {
+			auto dynamicMeshIt = RT64.dynamicMeshes.find(prevKey);
+			if (dynamicMeshIt != RT64.dynamicMeshes.end()) {
+				if (
+					!dynamicMeshIt->second.inUse &&
+					(dynamicMeshIt->second.vertexCount == vertexCount) && 
+					(dynamicMeshIt->second.vertexStride == vertexStride) && 
+					(dynamicMeshIt->second.indexCount == indexCount) && 
+					(dynamicMeshIt->second.raytraceable == raytraceable)
+				) 
+				{
+					if (dynamicMeshIt->second.newVertexBuffer == nullptr) {
+						dynamicMeshIt->second.newVertexBuffer = (float *)(malloc(vertexBufferSize));
+					}
+
+					memcpy(dynamicMeshIt->second.newVertexBuffer, vertexBuffer, vertexBufferSize);
+					dynamicMeshIt->second.newVertexBufferValid = true;
+					dynamicMeshIt->second.inUse = true;
+					dynamicMeshIt->second.lifetime = DYNAMIC_MESH_LIFETIME;
+					displayList.newMeshKeys.push_back(prevKey);
+					return dynamicMeshIt->second.mesh;
+				}
+			}
+		}
+	}
+
+	displayList.newMeshKeys.push_back(key);
 
 	// Search for a dynamic mesh that has the same key.
 	auto dynamicMeshIt = RT64.dynamicMeshes.find(key);
@@ -1406,12 +1443,15 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 		dynamicMesh.vertexStride = vertexStride;
 		dynamicMesh.indexCount = indexCount;
 		dynamicMesh.raytraceable = raytraceable;
+		dynamicMesh.prevVertexBuffer = (float *)(malloc(vertexBufferSize));
+		dynamicMesh.newVertexBuffer = nullptr;
 	}
 
 	// Update the dynamic mesh.
 	dynamicMesh.inUse = true;
 	dynamicMesh.lifetime = DYNAMIC_MESH_LIFETIME;
 	RT64.lib.SetMesh(dynamicMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
+	memcpy(dynamicMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
 	return dynamicMesh.mesh;
 }
 
@@ -1472,6 +1512,9 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **norm
 }
 
 static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace, uint32_t uid) {
+	if (uid == 0)
+		return;
+
 	RecordedMod *textureMod = nullptr;
 	bool linearFilter = false;
 	uint32_t cms = 0, cmt = 0;
@@ -1568,7 +1611,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	}
 
 	// Process the mesh that corresponds to the VBO.
-	instDesc.mesh = gfx_rt64_rapi_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace);
+	instDesc.mesh = gfx_rt64_rapi_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace, displayList);
 
 	// Mark the right instance flags.
 	instDesc.flags = 0;
@@ -1620,6 +1663,9 @@ static void gfx_rt64_rapi_start_frame(void) {
 	while (dlIt != RT64.displayLists.end()) {
 		if (dlIt->second.newValid) {
 			dlIt->second.prevTransform = dlIt->second.newTransform;
+			dlIt->second.prevMeshKeys = dlIt->second.newMeshKeys;
+			dlIt->second.newMeshKeys.clear();
+			dlIt->second.newMeshKeys.reserve(dlIt->second.prevMeshKeys.size());
 			dlIt->second.prevValid = true;
 			dlIt->second.newValid = false;
 		}
@@ -1665,11 +1711,20 @@ static void gfx_rt64_rapi_start_frame(void) {
 	auto dynamicMeshIt = RT64.dynamicMeshes.begin();
 	while (dynamicMeshIt != RT64.dynamicMeshes.end()) {
 		if (dynamicMeshIt->second.lifetime > 0) {
+			if (dynamicMeshIt->second.newVertexBufferValid) {
+				float *swapBuffer = dynamicMeshIt->second.prevVertexBuffer;
+				dynamicMeshIt->second.prevVertexBuffer = dynamicMeshIt->second.newVertexBuffer;
+				dynamicMeshIt->second.newVertexBuffer = swapBuffer;
+				dynamicMeshIt->second.newVertexBufferValid = false;
+			}
+			
 			dynamicMeshIt->second.inUse = false;
             dynamicMeshIt->second.lifetime--;
 			dynamicMeshIt++;
         }
 		else {
+			free(dynamicMeshIt->second.prevVertexBuffer);
+			free(dynamicMeshIt->second.newVertexBuffer);
 			RT64.lib.DestroyMesh(dynamicMeshIt->second.mesh);
 			dynamicMeshIt = RT64.dynamicMeshes.erase(dynamicMeshIt);
 		}
@@ -1739,6 +1794,8 @@ static void gfx_rt64_rapi_set_special_stage_lights(int levelIndex, int areaIndex
 void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	RT64_MATRIX4 viewMatrix;
 	float fovRadians;
+	static float *tempVertexBuffer = nullptr;
+	static size_t tempVertexBufferSize = 0;
 
 	// Calculate the interpolated camera.
 	if (RT64.prevCameraValid) {
@@ -1756,6 +1813,39 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	for (int i = 0; i < RT64.instanceCount; i++) {
 		RT64.instanceDescs[i].transform = gfx_rt64_lerp_matrix(RT64.instanceTransformsPrev[i], RT64.instanceTransformsCur[i], frameWeight);
 		RT64.lib.SetInstanceDescription(RT64.instances[i], RT64.instanceDescs[i]);
+	}
+
+	// Interpolate the meshes.
+	auto dynamicMeshIt = RT64.dynamicMeshes.begin();
+	while (dynamicMeshIt != RT64.dynamicMeshes.end()) {
+		if (dynamicMeshIt->second.newVertexBufferValid) {
+			// Recreate the temporal buffer if required.
+			size_t requiredVertexBufferSize = dynamicMeshIt->second.vertexCount * dynamicMeshIt->second.vertexStride;
+			if (requiredVertexBufferSize > tempVertexBufferSize) {
+				free(tempVertexBuffer);
+				tempVertexBuffer = (float *)(malloc(requiredVertexBufferSize));
+				tempVertexBufferSize = requiredVertexBufferSize;
+			}
+
+			// Interpolate all the floats in the temporal vertex buffer.
+			size_t f = 0;
+			size_t floatCount = requiredVertexBufferSize / sizeof(float);
+			float *tempPtr = tempVertexBuffer;
+			float *prevPtr = dynamicMeshIt->second.prevVertexBuffer;
+			float *newPtr = dynamicMeshIt->second.newVertexBuffer;
+			while (f < floatCount) {
+				*tempPtr = gfx_rt64_lerp_float(*prevPtr, *newPtr, frameWeight);
+				tempPtr++;
+				prevPtr++;
+				newPtr++;
+				f++;
+			}
+
+			// Update the mesh using the temporal vertex buffer.
+			RT64.lib.SetMesh(dynamicMeshIt->second.mesh, tempVertexBuffer, dynamicMeshIt->second.vertexCount, dynamicMeshIt->second.vertexStride, RT64.indexTriangleList, dynamicMeshIt->second.indexCount);
+		}
+
+		dynamicMeshIt++;
 	}
 
 	// Draw frame.
