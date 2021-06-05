@@ -41,6 +41,10 @@ void gfx_register_layout_graph_node(void *geo_layout, void *graph_node);
 void *gfx_build_graph_node_mod(void *graph_node, float modelview_matrix[4][4]);
 #endif
 
+#ifdef GFX_SEPARATE_SKYBOX
+void gfx_set_skybox(uint8_t skybox_id);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

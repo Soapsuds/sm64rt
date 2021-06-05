@@ -741,6 +741,48 @@ static bool preload_texture(void *user, const char *path) {
     return true;
 }
 
+#ifdef GFX_SEPARATE_SKYBOX
+
+#define MAX_SKYBOX_COUNT 10
+
+#define SKYBOX_DIR FS_TEXTUREDIR "/textures/skyboxes/"
+
+const char *skybox_paths[MAX_SKYBOX_COUNT] = {
+    SKYBOX_DIR "water.png",
+    SKYBOX_DIR "bitfs.png",
+    SKYBOX_DIR "wdw.png",
+    SKYBOX_DIR "cloud_floor.png",
+    SKYBOX_DIR "ccm.png",
+    SKYBOX_DIR "ssl.png",
+    SKYBOX_DIR "bbh.png",
+    SKYBOX_DIR "bidw.png",
+    SKYBOX_DIR "clouds.png",
+    SKYBOX_DIR "bits.png"
+};
+
+struct {
+    uint32_t textures[MAX_SKYBOX_COUNT];
+} skybox;
+
+void gfx_init_skybox() {
+    for (int i = 0; i < MAX_SKYBOX_COUNT; i++) {
+        skybox.textures[i] = 0;
+    }
+}
+
+void gfx_set_skybox(uint8_t skybox_id) {
+    if (skybox.textures[skybox_id] == 0) {
+        const char *skyboxPath = skybox_paths[skybox_id];
+        skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxPath);
+        gfx_rapi->select_texture(0, skybox.textures[skybox_id]);
+        load_texture(skyboxPath);
+    }
+
+    gfx_rapi->set_skybox_texture(skybox.textures[skybox_id]);
+}
+
+#endif
+
 #endif // EXTERNAL_DATA
 
 static void import_texture(int tile) {
@@ -2069,6 +2111,10 @@ void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, co
 
     for (size_t i = 0; i < sizeof(precomp_shaders) / sizeof(uint32_t); i++)
         gfx_lookup_or_create_shader_program(precomp_shaders[i]);
+
+#ifdef GFX_SEPARATE_SKYBOX
+    gfx_init_skybox();
+#endif
 }
 
 #ifdef EXTERNAL_DATA

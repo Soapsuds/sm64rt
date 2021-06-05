@@ -44,6 +44,9 @@ struct GfxRenderingAPI {
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
     void (*set_graph_node_mod)(void *graph_node_mod);
 #endif
+#ifdef GFX_SEPARATE_SKYBOX
+    void (*set_skybox_texture)(uint32_t texture_id);
+#endif
     void (*init)(void);
     void (*on_resize)(void);
     void (*start_frame)(void);

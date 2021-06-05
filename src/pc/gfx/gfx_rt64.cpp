@@ -107,10 +107,10 @@ struct RecordedCamera {
 };
 
 struct RecordedDisplayList {
-	std::vector<RecordedMesh> meshes;
-	int newMeshCount = 0;
+	std::vector<RecordedMesh> prevMeshes;
 	RT64_MATRIX4 prevTransform;
 	RT64_MATRIX4 newTransform;
+	int newCount = 0;
 	bool prevValid = false;
 	bool newValid = false;
 };
@@ -913,6 +913,7 @@ void gfx_rt64_apply_config() {
 }
 
 static void gfx_rt64_reset_logic_frame(void) {
+	RT64.lib.SetViewSkyPlane(RT64.view, nullptr);
     RT64.dynamicLightCount = 0;
 }
 
@@ -1340,10 +1341,9 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	size_t vertexBufferSize = buf_vbo_len * sizeof(float);
 	hashStream.add(buf_vbo, vertexBufferSize);
     uint64_t hash = hashStream.hash();
-	int meshIndex = displayList.newMeshCount++;
-	if (displayList.prevValid && (meshIndex < displayList.meshes.size())) {
+	if (displayList.prevValid && (displayList.newCount < displayList.prevMeshes.size())) {
 		// Try reusing the mesh that was stored in this index first.
-		auto &dynMesh = displayList.meshes[meshIndex];
+		auto &dynMesh = displayList.prevMeshes[displayList.newCount];
 		uint64_t prevHash = dynMesh.prevVertexBufferHash;
 		if (hash != prevHash) {
 			// We can only reuse the mesh and interpolate if the vertex formats are compatible.
@@ -1378,12 +1378,12 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	}
 
 	// Make the vector large enough to fit the required meshes.
-	if (displayList.newMeshCount > displayList.meshes.size()) {
-		displayList.meshes.resize(displayList.newMeshCount);
+	if (displayList.prevMeshes.size() < (displayList.newCount + 1)) {
+		displayList.prevMeshes.resize(displayList.newCount + 1);
 	}
 
 	// Destroy any previous pointers if they exist.
-	auto &dynMesh = displayList.meshes[meshIndex];
+	auto &dynMesh = displayList.prevMeshes[displayList.newCount];
 	if (dynMesh.mesh != nullptr) {
 		free(dynMesh.prevVertexBuffer);
 		free(dynMesh.newVertexBuffer);
@@ -1575,6 +1575,9 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	if (double_sided) {
 		instDesc.flags |= RT64_INSTANCE_DISABLE_BACKFACE_CULLING;
 	}
+
+	// Increase the counter.
+	displayList.newCount++;
 }
 
 void gfx_rt64_rapi_set_fog(uint8_t fog_r, uint8_t fog_g, uint8_t fog_b, int16_t fog_mul, int16_t fog_offset) {
@@ -1615,25 +1618,27 @@ static void gfx_rt64_rapi_start_frame(void) {
 	auto dlIt = RT64.displayLists.begin();
 	while (dlIt != RT64.displayLists.end()) {
 		if (dlIt->second.newValid) {
-			for (auto &dynMesh : dlIt->second.meshes) {
-				if (dynMesh.newVertexBufferValid) {
-					float *swapBuffer = dynMesh.prevVertexBuffer;
-					uint64_t swapHash = dynMesh.prevVertexBufferHash;
-					dynMesh.prevVertexBuffer = dynMesh.newVertexBuffer;
-					dynMesh.prevVertexBufferHash = dynMesh.newVertexBufferHash;
-					dynMesh.newVertexBuffer = swapBuffer;
-					dynMesh.newVertexBufferHash = swapHash;
-					dynMesh.newVertexBufferValid = false;
+			for (auto &dynMesh : dlIt->second.prevMeshes) {
+				if (!dynMesh.newVertexBufferValid) {
+					continue;
 				}
+
+				float *swapBuffer = dynMesh.prevVertexBuffer;
+				uint64_t swapHash = dynMesh.prevVertexBufferHash;
+				dynMesh.prevVertexBuffer = dynMesh.newVertexBuffer;
+				dynMesh.prevVertexBufferHash = dynMesh.newVertexBufferHash;
+				dynMesh.newVertexBuffer = swapBuffer;
+				dynMesh.newVertexBufferHash = swapHash;
+				dynMesh.newVertexBufferValid = false;
 			}
 
 			dlIt->second.prevTransform = dlIt->second.newTransform;
-			dlIt->second.newMeshCount = 0;
+			dlIt->second.newCount = 0;
 			dlIt->second.prevValid = true;
 			dlIt->second.newValid = false;
 		}
 		else {
-			for (auto &dynMesh : dlIt->second.meshes) {
+			for (auto &dynMesh : dlIt->second.prevMeshes) {
 				free(dynMesh.prevVertexBuffer);
 				free(dynMesh.newVertexBuffer);
 				RT64.lib.DestroyMesh(dynMesh.mesh);
@@ -1734,33 +1739,35 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	// Interpolate the meshes.
 	auto displayListIt = RT64.displayLists.begin();
 	while (displayListIt != RT64.displayLists.end()) {
-		for (auto &dynMesh : displayListIt->second.meshes) {
-			if (dynMesh.newVertexBufferValid) {
-				// Recreate the temporal buffer if required.
-				size_t requiredVertexBufferSize = dynMesh.vertexCount * dynMesh.vertexStride;
-				if (requiredVertexBufferSize > tempVertexBufferSize) {
-					free(tempVertexBuffer);
-					tempVertexBuffer = (float *)(malloc(requiredVertexBufferSize));
-					tempVertexBufferSize = requiredVertexBufferSize;
-				}
-
-				// Interpolate all the floats in the temporal vertex buffer.
-				size_t f = 0;
-				size_t floatCount = requiredVertexBufferSize / sizeof(float);
-				float *tempPtr = tempVertexBuffer;
-				float *prevPtr = dynMesh.prevVertexBuffer;
-				float *newPtr = dynMesh.newVertexBuffer;
-				while (f < floatCount) {
-					*tempPtr = gfx_rt64_lerp_float(*prevPtr, *newPtr, frameWeight);
-					tempPtr++;
-					prevPtr++;
-					newPtr++;
-					f++;
-				}
-
-				// Update the mesh using the temporal vertex buffer.
-				RT64.lib.SetMesh(dynMesh.mesh, tempVertexBuffer, dynMesh.vertexCount, dynMesh.vertexStride, RT64.indexTriangleList, dynMesh.indexCount);
+		for (auto &dynMesh : displayListIt->second.prevMeshes) {
+			if (!dynMesh.newVertexBufferValid) {
+				continue;
 			}
+
+			// Recreate the temporal buffer if required.
+			size_t requiredVertexBufferSize = dynMesh.vertexCount * dynMesh.vertexStride;
+			if (requiredVertexBufferSize > tempVertexBufferSize) {
+				free(tempVertexBuffer);
+				tempVertexBuffer = (float *)(malloc(requiredVertexBufferSize));
+				tempVertexBufferSize = requiredVertexBufferSize;
+			}
+
+			// Interpolate all the floats in the temporal vertex buffer.
+			size_t f = 0;
+			size_t floatCount = requiredVertexBufferSize / sizeof(float);
+			float *tempPtr = tempVertexBuffer;
+			float *prevPtr = dynMesh.prevVertexBuffer;
+			float *newPtr = dynMesh.newVertexBuffer;
+			while (f < floatCount) {
+				*tempPtr = gfx_rt64_lerp_float(*prevPtr, *newPtr, frameWeight);
+				tempPtr++;
+				prevPtr++;
+				newPtr++;
+				f++;
+			}
+
+			// Update the mesh using the temporal vertex buffer.
+			RT64.lib.SetMesh(dynMesh.mesh, tempVertexBuffer, dynMesh.vertexCount, dynMesh.vertexStride, RT64.indexTriangleList, dynMesh.indexCount);
 		}
 
 		displayListIt++;
@@ -1944,6 +1951,10 @@ static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
 	RT64.graphNodeMod = (RecordedMod *)(graph_node_mod);
 }
 
+static void gfx_rt64_rapi_set_skybox_texture(uint32_t texture_id) {
+	RT64.lib.SetViewSkyPlane(RT64.view, RT64.textures[texture_id].texture);
+}
+
 extern "C" void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {
 	static bool loadedLayoutMods = false;
 	if (!loadedLayoutMods) {
@@ -1994,6 +2005,7 @@ struct GfxRenderingAPI gfx_rt64_rapi = {
 	gfx_rt64_rapi_draw_triangles_ortho,
     gfx_rt64_rapi_draw_triangles_persp,
 	gfx_rt64_rapi_set_graph_node_mod,
+	gfx_rt64_rapi_set_skybox_texture,
     gfx_rt64_rapi_init,
 	gfx_rt64_rapi_on_resize,
     gfx_rt64_rapi_start_frame,
