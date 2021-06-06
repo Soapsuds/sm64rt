@@ -764,20 +764,21 @@ struct {
     uint32_t textures[MAX_SKYBOX_COUNT];
 } skybox;
 
+void gfx_preload_skybox(uint8_t skybox_id) {
+    const char *skyboxPath = skybox_paths[skybox_id];
+    skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxPath);
+    gfx_rapi->select_texture(0, skybox.textures[skybox_id]);
+    load_texture(skyboxPath);
+}
+
 void gfx_init_skybox() {
+    // Preload all the skyboxes so there's no stutter when loading the levels.
     for (int i = 0; i < MAX_SKYBOX_COUNT; i++) {
-        skybox.textures[i] = 0;
+        gfx_preload_skybox(i);
     }
 }
 
 void gfx_set_skybox(uint8_t skybox_id) {
-    if (skybox.textures[skybox_id] == 0) {
-        const char *skyboxPath = skybox_paths[skybox_id];
-        skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxPath);
-        gfx_rapi->select_texture(0, skybox.textures[skybox_id]);
-        load_texture(skyboxPath);
-    }
-
     gfx_rapi->set_skybox_texture(skybox.textures[skybox_id]);
 }
 

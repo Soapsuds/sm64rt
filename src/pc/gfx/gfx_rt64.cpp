@@ -529,7 +529,8 @@ void gfx_rt64_rapi_preload_shaders() {
 	gfx_rt64_rapi_preload_shader(0x9200A00, 1, 1, 0, 0, false, false);
 	gfx_rt64_rapi_preload_shader(0x1A00045, 0, 1, 2, 2, false, false);
 	gfx_rt64_rapi_preload_shader(0x9200045, 1, 1, 0, 0, false, false);
-	gfx_rt64_rapi_preload_shader(0x5045045, 0, 1, 2, 2, 0, 0);
+	gfx_rt64_rapi_preload_shader(0x5045045, 0, 1, 2, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x3200A00, 1, 1, 0, 0, true, false);
 }
 
 int gfx_rt64_get_level_index() {
@@ -990,8 +991,8 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 			else if (RT64.run_one_game_iter != nullptr) {
 				LARGE_INTEGER StartTime, EndTime;
 				QueryPerformanceCounter(&StartTime);
-				RT64.run_one_game_iter();
 				gfx_rt64_reset_logic_frame();
+				RT64.run_one_game_iter();
 				QueryPerformanceCounter(&EndTime);
 				elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
 				if (RT64.inspector != nullptr) {
