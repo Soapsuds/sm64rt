@@ -94,10 +94,11 @@ struct RecordedTexture {
 };
 
 struct RecordedMod {
-    RT64_MATERIAL *materialMod;
-    RT64_LIGHT *lightMod;
-	uint64_t normalMapHash;
-	uint64_t specularMapHash;
+    RT64_MATERIAL *materialMod = nullptr;
+    RT64_LIGHT *lightMod = nullptr;
+	uint64_t normalMapHash = 0;
+	uint64_t specularMapHash = 0;
+	bool interpolationEnabled = true;
 };
 
 struct RecordedCamera {
@@ -707,6 +708,14 @@ void gfx_rt64_load_geo_layout_mods() {
 					recordedMod->specularMapHash = 0;
 				}
 
+				// Parse interpolation mod.
+				if (jgeo.find("interpolationEnabled") != jgeo.end()) {
+					recordedMod->interpolationEnabled = jgeo["interpolationEnabled"];
+				}
+				else {
+					recordedMod->interpolationEnabled = true;
+				}
+
 				RT64.geoLayoutMods[geoLayout] = recordedMod;
 			}
 			else {
@@ -750,6 +759,10 @@ void gfx_rt64_save_geo_layout_mods() {
 				const std::string specName = RT64.texNameMap[geoMod->specularMapHash];
 				if (!normName.empty()) {
 					jgeo["specularMapMod"] = gfx_rt64_save_specular_map_mod(specName);
+				}
+
+				if (!geoMod->interpolationEnabled) {
+					jgeo["interpolationEnabled"] = false;
 				}
 				
 				jroot["geoLayouts"].push_back(jgeo);
@@ -1454,14 +1467,18 @@ static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 transform) {
 	light.shadowOffset *= scale;
 }
 
-static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RT64_TEXTURE **specular, RecordedMod *mod, RT64_MATRIX4 transform, bool apply_light) {
+static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RT64_TEXTURE **specular, bool *interpolate, RecordedMod *mod, RT64_MATRIX4 transform, bool apply_light) {
+	if (!mod->interpolationEnabled) {
+		*interpolate = false;
+	}
+	
 	if (mod->materialMod != NULL) {
 		RT64_ApplyMaterialAttributes(material, mod->materialMod);
 	}
 
 	if (apply_light && (mod->lightMod != NULL)) {
-            gfx_rt64_add_light(mod->lightMod, transform);
-        }
+        gfx_rt64_add_light(mod->lightMod, transform);
+    }
 
 	if (mod->normalMapHash != 0) {
 		auto hashIt = RT64.textureHashIdMap.find(mod->normalMapHash);
@@ -1487,7 +1504,7 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **norm
 static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace, uint32_t uid) {
 	RecordedMod *textureMod = nullptr;
 	bool linearFilter = false;
-	bool interpolate = uid != 0;
+	bool interpolate = (uid != 0);
 	uint32_t cms = 0, cmt = 0;
 	
 	// Create the instance.
@@ -1496,7 +1513,6 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 
 	// Retrieve the previous transform for the display list with this UID and store the current one.
 	auto &displayList = RT64.displayLists[uid];
-	RT64.instanceTransformsPrev[instanceIndex] = displayList.prevValid ? displayList.prevTransform : transform;
 	RT64.instanceTransformsCur[instanceIndex] = transform;
 	displayList.newTransform = transform;
 	displayList.newValid = true;
@@ -1546,12 +1562,15 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	instDesc.material = RT64.defaultMaterial;
 
 	if (RT64.graphNodeMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, RT64.graphNodeMod, transform, false);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, RT64.graphNodeMod, transform, false);
 	}
 
 	if (textureMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, textureMod, transform, true);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, textureMod, transform, true);
 	}
+
+	// Interpolate transform if specified.
+	RT64.instanceTransformsPrev[instanceIndex] = (displayList.prevValid && interpolate) ? displayList.prevTransform : transform;
 
 	// Apply a higlight color if the material is selected.
 	if (highlightMaterial) {
@@ -1793,17 +1812,7 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	}
 
 	// Draw frame.
-	LARGE_INTEGER StartTime, EndTime, ElapsedMicroseconds;
-	QueryPerformanceCounter(&StartTime);
 	RT64.lib.DrawDevice(RT64.device, RT64.turboMode ? 0 : 1);
-	QueryPerformanceCounter(&EndTime);
-	elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
-
-	if (RT64.inspector != nullptr) {
-		char message[64];
-		sprintf(message, "RT64: %.3f ms\n", ElapsedMicroseconds.QuadPart / 1000.0);
-		RT64.lib.PrintMessageInspector(RT64.inspector, message);
-	}
 }
 
 static void gfx_rt64_rapi_end_frame(void) {
@@ -1895,10 +1904,6 @@ static void gfx_rt64_rapi_end_frame(void) {
 		RecordedMod *texMod = RT64.texMods[RT64.pickedTextureHash];
 		if (texMod == nullptr) {
 			texMod = new RecordedMod();
-			texMod->materialMod = nullptr;
-			texMod->lightMod = nullptr;
-			texMod->normalMapHash = 0;
-			texMod->specularMapHash = 0;
 			RT64.texMods[RT64.pickedTextureHash] = texMod;
 		}
 
@@ -1951,39 +1956,49 @@ static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *grap
         }
     }
 
-if ((geoLayout != nullptr) && (graphNode != nullptr)) {
+	if ((geoLayout != nullptr) && (graphNode != nullptr)) {
         // Find the mod for the specified geoLayout.
         auto it = RT64.geoLayoutMods.find(geoLayout);
-			RecordedMod *geoMod = (it != RT64.geoLayoutMods.end()) ? it->second : nullptr;
-			if (geoMod != nullptr) {
-				RecordedMod *graphMod = RT64.graphNodeMods[graphNode];
-				if (graphMod == nullptr) {
-					graphMod = new RecordedMod();
-					graphMod->materialMod = nullptr;
-					graphMod->lightMod = nullptr;
-					RT64.graphNodeMods[graphNode] = graphMod;
+		RecordedMod *geoMod = (it != RT64.geoLayoutMods.end()) ? it->second : nullptr;
+		if (geoMod != nullptr) {
+			RecordedMod *graphMod = RT64.graphNodeMods[graphNode];
+			if (graphMod == nullptr) {
+				graphMod = new RecordedMod();
+				RT64.graphNodeMods[graphNode] = graphMod;
+			}
+
+			if (geoMod->materialMod != nullptr) {
+				if (graphMod->materialMod == nullptr) {
+					graphMod->materialMod = new RT64_MATERIAL();
+					graphMod->materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
 				}
 
-				if (geoMod->materialMod != nullptr) {
-					if (graphMod->materialMod == nullptr) {
-						graphMod->materialMod = new RT64_MATERIAL();
-						graphMod->materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
-					}
+				RT64_ApplyMaterialAttributes(graphMod->materialMod, geoMod->materialMod);
+				graphMod->materialMod->enabledAttributes |= geoMod->materialMod->enabledAttributes;
+			}
 
-					RT64_ApplyMaterialAttributes(graphMod->materialMod, geoMod->materialMod);
-					graphMod->materialMod->enabledAttributes |= geoMod->materialMod->enabledAttributes;
+			if (geoMod->lightMod != nullptr) {
+				if (graphMod->lightMod == nullptr) {
+					graphMod->lightMod = new RT64_LIGHT();
 				}
 
-				if (geoMod->lightMod != nullptr) {
-					if (graphMod->lightMod == nullptr) {
-						graphMod->lightMod = new RT64_LIGHT();
-					}
+				memcpy(graphMod->lightMod, geoMod->lightMod, sizeof(RT64_LIGHT));
+			}
 
-					memcpy(graphMod->lightMod, geoMod->lightMod, sizeof(RT64_LIGHT));
-				}
+			if (geoMod->normalMapHash != 0) {
+				graphMod->normalMapHash = geoMod->normalMapHash;
+			}
+
+			if (geoMod->specularMapHash != 0) {
+				graphMod->specularMapHash = geoMod->specularMapHash;
+			}
+
+			if (!geoMod->interpolationEnabled) {
+				graphMod->interpolationEnabled = geoMod->interpolationEnabled;
 			}
 		}
 	}
+}
 
 static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4]) {
     auto graphNodeIt = RT64.graphNodeMods.find(graphNode);

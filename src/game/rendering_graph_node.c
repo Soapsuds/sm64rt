@@ -1144,9 +1144,15 @@ void geo_process_root(struct GraphNodeRoot *node, Vp *b, Vp *c, s32 clearColor) 
         gSPMatrix(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(gMatStackFixed[gMatStackIndex]),
                   G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
         gCurGraphNodeRoot = node;
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+        gCurGraphNodeMod = gfx_build_graph_node_mod(gCurGraphNodeRoot, gMatStack[gMatStackIndex]);
+#endif
         if (node->node.children != NULL) {
             geo_process_node_and_siblings(node->node.children);
         }
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+        gCurGraphNodeMod = NULL;
+#endif
         gCurGraphNodeRoot = NULL;
         if (gShowDebugText) {
             print_text_fmt_int(180, 36, "MEM %d",
