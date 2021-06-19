@@ -118,6 +118,11 @@ struct RecordedDisplayList {
 	bool newValid = false;
 };
 
+struct RecordedLight {
+	RT64_LIGHT prevLight;
+	RT64_LIGHT newLight;
+};
+
 //	Convention of bits for different lights.
 //		1 	- Directional Tier A
 //		2 	- Directional Tier B
@@ -157,7 +162,7 @@ struct {
     unsigned int lightCount;
 	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
 	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
-    RT64_LIGHT dynamicLights[MAX_DYNAMIC_LIGHTS];
+    RecordedLight dynamicLights[MAX_DYNAMIC_LIGHTS];
     unsigned int dynamicLightCount;
 
 	// Ray picking data.
@@ -1452,22 +1457,27 @@ int gfx_rt64_rapi_add_instance() {
 	return instanceIndex;
 }
 
-static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 transform) {
+static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 prevTransform, RT64_MATRIX4 newTransform) {
     assert(RT64.dynamicLightCount < MAX_DYNAMIC_LIGHTS);
-    auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
-    light = *lightMod;
+    auto &dynLight = RT64.dynamicLights[RT64.dynamicLightCount++];
 
-    light.position = transform_position_affine(transform, lightMod->position);
+	auto configureLight = [=](RT64_LIGHT *targetLight, const RT64_MATRIX4 &transform) {
+		*targetLight = *lightMod;
+		targetLight->position = transform_position_affine(transform, lightMod->position);
 
-	// Use a vector that points in all three axes in case the node uses non-uniform scaling to get an estimate.
-	RT64_VECTOR3 scaleVector = transform_direction_affine(transform, { 1.0f, 1.0f, 1.0f });
-	float scale = vector_length(scaleVector) / sqrt(3);
-	light.attenuationRadius *= scale;
-	light.pointRadius *= scale;
-	light.shadowOffset *= scale;
+		// Use a vector that points in all three axes in case the node uses non-uniform scaling to get an estimate.
+		RT64_VECTOR3 scaleVector = transform_direction_affine(transform, { 1.0f, 1.0f, 1.0f });
+		float scale = vector_length(scaleVector) / sqrt(3);
+		targetLight->attenuationRadius *= scale;
+		targetLight->pointRadius *= scale;
+		targetLight->shadowOffset *= scale;
+	};
+
+	configureLight(&dynLight.prevLight, prevTransform);
+	configureLight(&dynLight.newLight, newTransform);
 }
 
-static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RT64_TEXTURE **specular, bool *interpolate, RecordedMod *mod, RT64_MATRIX4 transform, bool apply_light) {
+static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **normal, RT64_TEXTURE **specular, bool *interpolate, RecordedMod *mod, RT64_MATRIX4 prevTransform, RT64_MATRIX4 newTransform, bool applyLight) {
 	if (!mod->interpolationEnabled) {
 		*interpolate = false;
 	}
@@ -1476,8 +1486,8 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, RT64_TEXTURE **norm
 		RT64_ApplyMaterialAttributes(material, mod->materialMod);
 	}
 
-	if (apply_light && (mod->lightMod != NULL)) {
-        gfx_rt64_add_light(mod->lightMod, transform);
+	if (applyLight && (mod->lightMod != NULL)) {
+        gfx_rt64_add_light(mod->lightMod, (*interpolate) ? prevTransform : newTransform, newTransform);
     }
 
 	if (mod->normalMapHash != 0) {
@@ -1561,16 +1571,17 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	// Build material with applied mods.
 	instDesc.material = RT64.defaultMaterial;
 
+	RT64_MATRIX4 prevTransform = (displayList.prevValid && interpolate) ? displayList.prevTransform : transform;
 	if (RT64.graphNodeMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, RT64.graphNodeMod, transform, false);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, RT64.graphNodeMod, prevTransform, transform, false);
 	}
 
 	if (textureMod != nullptr) {
-		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, textureMod, transform, true);
+		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, textureMod, prevTransform, transform, true);
 	}
 
 	// Interpolate transform if specified.
-	RT64.instanceTransformsPrev[instanceIndex] = (displayList.prevValid && interpolate) ? displayList.prevTransform : transform;
+	RT64.instanceTransformsPrev[instanceIndex] = interpolate ? prevTransform : transform;
 
 	// Apply a higlight color if the material is selected.
 	if (highlightMaterial) {
@@ -1716,6 +1727,14 @@ static inline float gfx_rt64_lerp_float(float a, float b, float t) {
 	return a + t * (b - a);
 }
 
+static inline RT64_VECTOR3 gfx_rt64_lerp_vector3(RT64_VECTOR3 a, RT64_VECTOR3 b, float t) {
+	return {
+		gfx_rt64_lerp_float(a.x, b.x, t),
+		gfx_rt64_lerp_float(a.y, b.y, t),
+		gfx_rt64_lerp_float(a.z, b.z, t)
+	};
+}
+
 static inline RT64_MATRIX4 gfx_rt64_lerp_matrix(const RT64_MATRIX4 &a, const RT64_MATRIX4 &b, float t) {
 	// TODO: This is just a hacky way to see some interpolated values, but it is NOT the proper way
 	// to interpolate a transformation matrix. That will likely require decomposition of both the matrices.
@@ -1732,21 +1751,23 @@ static void gfx_rt64_rapi_set_special_stage_lights(int levelIndex, int areaIndex
 	// Dynamic Lakitu camera light for Shifting Sand Land Pyramid.
 	if ((levelIndex == 8) && (areaIndex == 2)) {
         // Build the dynamic light.
-        auto &light = RT64.dynamicLights[RT64.dynamicLightCount++];
+		// TODO: Add interpolation support.
+        auto &dynLight = RT64.dynamicLights[RT64.dynamicLightCount++];
 		RT64_VECTOR3 viewPos = { RT64.camera.invViewMatrix.m[3][0], RT64.camera.invViewMatrix.m[3][1], RT64.camera.invViewMatrix.m[3][2] };
 		RT64_VECTOR3 marioPos = { gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2] };
-		light.diffuseColor.x = 1.0f;
-		light.diffuseColor.y = 0.9f;
-		light.diffuseColor.z = 0.5f;
-		light.position.x = viewPos.x + (viewPos.x - marioPos.x);
-		light.position.y = viewPos.y + 150.0f;
-		light.position.z = viewPos.z + (viewPos.z - marioPos.z);
-		light.attenuationRadius = 4000.0f;
-		light.attenuationExponent = 1.0f;
-		light.pointRadius = 25.0f;
-		light.specularColor = { 0.65f, 0.585f, 0.325f };
-		light.shadowOffset = 1000.0f;
-		light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
+		dynLight.prevLight.diffuseColor.x = 1.0f;
+		dynLight.prevLight.diffuseColor.y = 0.9f;
+		dynLight.prevLight.diffuseColor.z = 0.5f;
+		dynLight.prevLight.position.x = viewPos.x + (viewPos.x - marioPos.x);
+		dynLight.prevLight.position.y = viewPos.y + 150.0f;
+		dynLight.prevLight.position.z = viewPos.z + (viewPos.z - marioPos.z);
+		dynLight.prevLight.attenuationRadius = 4000.0f;
+		dynLight.prevLight.attenuationExponent = 1.0f;
+		dynLight.prevLight.pointRadius = 25.0f;
+		dynLight.prevLight.specularColor = { 0.65f, 0.585f, 0.325f };
+		dynLight.prevLight.shadowOffset = 1000.0f;
+		dynLight.prevLight.groupBits = RT64_LIGHT_GROUP_DEFAULT;
+		dynLight.newLight = dynLight.prevLight;
 	}
 }
 
@@ -1811,6 +1832,22 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 		displayListIt++;
 	}
 
+	// Interpolate the dynamic lights.
+	int levelIndex = gfx_rt64_get_level_index();
+	int areaIndex = gfx_rt64_get_area_index();
+	int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
+	for (int i = 0; i < RT64.dynamicLightCount; i++) {
+		auto &light = RT64.lights[levelLightCount + i];
+		const auto &prevLight = RT64.dynamicLights[i].prevLight;
+		const auto &newLight = RT64.dynamicLights[i].newLight;
+		light.position = gfx_rt64_lerp_vector3(prevLight.position, newLight.position, frameWeight);
+		light.attenuationRadius = gfx_rt64_lerp_float(prevLight.attenuationRadius, newLight.attenuationRadius, frameWeight);
+		light.pointRadius = gfx_rt64_lerp_float(prevLight.pointRadius, newLight.pointRadius, frameWeight);
+		light.shadowOffset = gfx_rt64_lerp_float(prevLight.shadowOffset, newLight.shadowOffset, frameWeight);
+	}
+
+	RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
+
 	// Draw frame.
 	RT64.lib.DrawDevice(RT64.device, RT64.turboMode ? 0 : 1);
 }
@@ -1835,8 +1872,9 @@ static void gfx_rt64_rapi_end_frame(void) {
 		RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
 		assert(RT64.lightCount <= MAX_LIGHTS);
 		memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
-		memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
-    	RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
+		for (int i = 0; i < RT64.dynamicLightCount; i++) {
+			memcpy(&RT64.lights[levelLightCount + i], &RT64.dynamicLights[i].newLight, sizeof(RT64_LIGHT));
+		}
 	}
 
 	// Compute the delta vertex buffer for all interpolated display lists.
@@ -2000,15 +2038,29 @@ static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *grap
 	}
 }
 
-static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4]) {
+static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4], uint32_t uid) {
     auto graphNodeIt = RT64.graphNodeMods.find(graphNode);
     if (graphNodeIt != RT64.graphNodeMods.end()) {
         RecordedMod *graphNodeMod = (RecordedMod *) (graphNodeIt->second);
         if (graphNodeMod != nullptr) {
             if (graphNodeMod->lightMod != nullptr) {
-                RT64_MATRIX4 transform;
-                gfx_matrix_mul(transform.m, modelview_matrix, RT64.camera.invViewMatrix.m);
-                gfx_rt64_add_light(graphNodeMod->lightMod, transform);
+                RT64_MATRIX4 prevTransform, newTransform;
+                gfx_matrix_mul(newTransform.m, modelview_matrix, RT64.camera.invViewMatrix.m);
+				prevTransform = newTransform;
+
+				// Use display list previous transforms to find the previous transform for this light.
+				bool interpolate = (uid != 0) && graphNodeMod->interpolationEnabled;
+				if (interpolate) {
+					auto &displayList = RT64.displayLists[uid];
+					if (displayList.prevValid) {
+						prevTransform = displayList.prevTransform;
+					}
+
+					displayList.newTransform = newTransform;
+					displayList.newValid = true;
+				}
+
+                gfx_rt64_add_light(graphNodeMod->lightMod, prevTransform, newTransform);
             }
 
             return graphNodeMod;
@@ -2036,8 +2088,8 @@ extern "C" void gfx_register_layout_graph_node(void *geoLayout, void *graphNode)
     gfx_rt64_rapi_register_layout_graph_node(geoLayout, graphNode);
 }
 
-extern "C" void *gfx_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4]) {
-    return gfx_rt64_rapi_build_graph_node_mod(graphNode, modelview_matrix);
+extern "C" void *gfx_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4], uint32_t uid) {
+    return gfx_rt64_rapi_build_graph_node_mod(graphNode, modelview_matrix, uid);
 }
 
 struct GfxWindowManagerAPI gfx_rt64_wapi = {

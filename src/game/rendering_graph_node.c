@@ -1019,7 +1019,7 @@ void geo_process_node_and_siblings(struct GraphNode *firstNode) {
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
             void *previousGraphNodeMod = gCurGraphNodeMod;
-            void *graphNodeMod = gfx_build_graph_node_mod(curGraphNode, gMatStack[gMatStackIndex]);
+            void *graphNodeMod = gfx_build_graph_node_mod(curGraphNode, gMatStack[gMatStackIndex], gCurGraphNodeUIDHash);
             if (graphNodeMod != NULL) {
                 gCurGraphNodeMod = graphNodeMod;
             }
@@ -1145,7 +1145,7 @@ void geo_process_root(struct GraphNodeRoot *node, Vp *b, Vp *c, s32 clearColor) 
                   G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
         gCurGraphNodeRoot = node;
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
-        gCurGraphNodeMod = gfx_build_graph_node_mod(gCurGraphNodeRoot, gMatStack[gMatStackIndex]);
+        gCurGraphNodeMod = gfx_build_graph_node_mod(gCurGraphNodeRoot, gMatStack[gMatStackIndex], gCurGraphNodeUIDHash);
 #endif
         if (node->node.children != NULL) {
             geo_process_node_and_siblings(node->node.children);
