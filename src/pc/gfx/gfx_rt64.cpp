@@ -76,10 +76,12 @@ struct RecordedMesh {
 	float *newVertexBuffer = nullptr;
 	uint64_t newVertexBufferHash = 0;
 	bool newVertexBufferValid = false;
+	float *deltaVertexBuffer = nullptr;
     RT64_MESH *mesh = nullptr;
     uint32_t vertexCount = 0;
 	uint32_t vertexStride = 0;
     uint32_t indexCount = 0;
+	bool useTexture = false;
     bool raytrace = false;
 };
 
@@ -997,8 +999,9 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 				elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
 				if (RT64.inspector != nullptr) {
 					char message[64];
+					RT64.lib.PrintClearInspector(RT64.inspector);
 					sprintf(message, "FRAMETIME: %.3f ms\n", ElapsedMicroseconds.QuadPart / 1000.0);
-					RT64.lib.PrintToInspector(RT64.inspector, message);
+					RT64.lib.PrintMessageInspector(RT64.inspector, message);
 				}
 			}
 
@@ -1322,6 +1325,10 @@ static void gfx_rt64_rapi_set_scissor(int x, int y, int width, int height) {
 static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
 }
 
+static inline float gfx_rt64_norm_texcoord(float s, uint8_t address_mode) {
+	return s - long(s);
+}
+
 static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, RecordedDisplayList &displayList, bool interpolate) {
 	assert(RT64.shaderProgram != nullptr);
 
@@ -1333,7 +1340,8 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	unsigned int vertexStride = 0;
 	unsigned int indexCount = buf_vbo_num_tris * 3;
 	void *vertexBuffer = buf_vbo;
-	vertexStride = 16 + 12 + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
+	const unsigned int vertexFixedStride = 16 + 12;
+	vertexStride = vertexFixedStride + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
 	vertexCount = (buf_vbo_len * 4) / vertexStride;
 	assert(buf_vbo_num_tris == (vertexCount / 3));
 	
@@ -1356,9 +1364,14 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 				(dynMesh.raytrace == raytrace)
 			) 
 			{
-				// Allocate the vertex buffer if it hasn't been created yet.
+				// Allocate the vertex buffers if they haven't been created yet.
 				if (dynMesh.newVertexBuffer == nullptr) {
 					dynMesh.newVertexBuffer = (float *)(malloc(vertexBufferSize));
+				}
+
+				if (dynMesh.deltaVertexBuffer == nullptr) {
+					dynMesh.deltaVertexBuffer = (float *)(malloc(vertexBufferSize));
+					memset(dynMesh.deltaVertexBuffer, 0, vertexBufferSize);
 				}
 
 				// Update the vertex buffer and the hash with the new contents if the hashes are different.
@@ -1388,9 +1401,11 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	if (dynMesh.mesh != nullptr) {
 		free(dynMesh.prevVertexBuffer);
 		free(dynMesh.newVertexBuffer);
+		free(dynMesh.deltaVertexBuffer);
 		RT64.lib.DestroyMesh(dynMesh.mesh);
 		dynMesh.prevVertexBuffer = nullptr;
 		dynMesh.newVertexBuffer = nullptr;
+		dynMesh.deltaVertexBuffer = nullptr;
 		dynMesh.mesh = nullptr;
 	}
 
@@ -1399,12 +1414,14 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	dynMesh.vertexCount = vertexCount;
 	dynMesh.vertexStride = vertexStride;
 	dynMesh.indexCount = indexCount;
+	dynMesh.useTexture = useTexture;
 	dynMesh.raytrace = raytrace;
 	dynMesh.prevVertexBuffer = (float *)(malloc(vertexBufferSize));
 	dynMesh.prevVertexBufferHash = hash;
 	dynMesh.newVertexBuffer = nullptr;
 	dynMesh.newVertexBufferHash = 0;
 	dynMesh.newVertexBufferValid = false;
+	dynMesh.deltaVertexBuffer = nullptr;
 	RT64.lib.SetMesh(dynMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
 	memcpy(dynMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
 
@@ -1642,6 +1659,7 @@ static void gfx_rt64_rapi_start_frame(void) {
 			for (auto &dynMesh : dlIt->second.prevMeshes) {
 				free(dynMesh.prevVertexBuffer);
 				free(dynMesh.newVertexBuffer);
+				free(dynMesh.deltaVertexBuffer);
 				RT64.lib.DestroyMesh(dynMesh.mesh);
 			}
 
@@ -1663,10 +1681,10 @@ static void gfx_rt64_rapi_start_frame(void) {
         int areaIndex = gfx_rt64_get_area_index();
 		sprintf(marioMessage, "Mario pos: %.1f %.1f %.1f", gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2]);
         sprintf(levelMessage, "Level #%d Area #%d", levelIndex, areaIndex);
-		RT64.lib.PrintToInspector(RT64.inspector, marioMessage);
-		RT64.lib.PrintToInspector(RT64.inspector, levelMessage);
-		RT64.lib.PrintToInspector(RT64.inspector, "F1: Toggle inspectors");
-		RT64.lib.PrintToInspector(RT64.inspector, "F5: Save all configuration");
+		RT64.lib.PrintMessageInspector(RT64.inspector, marioMessage);
+		RT64.lib.PrintMessageInspector(RT64.inspector, levelMessage);
+		RT64.lib.PrintMessageInspector(RT64.inspector, "F1: Toggle inspectors");
+		RT64.lib.PrintMessageInspector(RT64.inspector, "F5: Save all configuration");
 
 		// Inspect the current level's lights.
         RT64_LIGHT *lights = RT64.levelLights[levelIndex][areaIndex];
@@ -1758,12 +1776,12 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 			size_t floatCount = requiredVertexBufferSize / sizeof(float);
 			float *tempPtr = tempVertexBuffer;
 			float *prevPtr = dynMesh.prevVertexBuffer;
-			float *newPtr = dynMesh.newVertexBuffer;
+			float *deltaPtr = dynMesh.deltaVertexBuffer;
 			while (f < floatCount) {
-				*tempPtr = gfx_rt64_lerp_float(*prevPtr, *newPtr, frameWeight);
+				*tempPtr = (*prevPtr) + (*deltaPtr) * frameWeight;
 				tempPtr++;
 				prevPtr++;
-				newPtr++;
+				deltaPtr++;
 				f++;
 			}
 
@@ -1782,13 +1800,9 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
 
 	if (RT64.inspector != nullptr) {
-		char statsMessage[256] = "";
-    	sprintf(statsMessage, "Instances %d Lights %d", RT64.instanceCount, RT64.lightCount);
-    	RT64.lib.PrintToInspector(RT64.inspector, statsMessage);
-
 		char message[64];
 		sprintf(message, "RT64: %.3f ms\n", ElapsedMicroseconds.QuadPart / 1000.0);
-		RT64.lib.PrintToInspector(RT64.inspector, message);
+		RT64.lib.PrintMessageInspector(RT64.inspector, message);
 	}
 }
 
@@ -1814,6 +1828,41 @@ static void gfx_rt64_rapi_end_frame(void) {
 		memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
 		memcpy(&RT64.lights[levelLightCount], RT64.dynamicLights, sizeof(RT64_LIGHT) * RT64.dynamicLightCount);
     	RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
+	}
+
+	// Compute the delta vertex buffer for all interpolated display lists.
+	auto displayListIt = RT64.displayLists.begin();
+	while (displayListIt != RT64.displayLists.end()) {
+		for (auto &dynMesh : displayListIt->second.prevMeshes) {
+			if (!dynMesh.newVertexBufferValid) {
+				continue;
+			}
+
+			float *prevPtr = dynMesh.prevVertexBuffer;
+			float *newPtr = dynMesh.newVertexBuffer;
+			float *deltaPtr = dynMesh.deltaVertexBuffer;
+			size_t f = 0, i = 0;
+			size_t imax = dynMesh.vertexStride / sizeof(float);
+			size_t floatCount = dynMesh.vertexCount * imax;
+			float deltaValue = 0.0f;
+			while (f < floatCount) {
+				deltaValue = *newPtr - *prevPtr;
+				if (dynMesh.useTexture && ((i == 7) || (i == 8)) && ((deltaValue * (*deltaPtr)) < 0.0f)) {
+					// Reuse the existing delta value as it is.
+				}
+				else {
+					*deltaPtr = deltaValue;
+				}
+
+				prevPtr++;
+				newPtr++;
+				deltaPtr++;
+				f++;
+				i = (i + 1) % imax;
+			}
+		}
+
+		displayListIt++;
 	}
 
 	gfx_rt64_rapi_draw_frame(0.5f);
@@ -1861,6 +1910,12 @@ static void gfx_rt64_rapi_end_frame(void) {
 		if (RT64.inspector != nullptr) {
 			RT64.lib.SetMaterialInspector(RT64.inspector, texMod->materialMod, textureName.c_str());
 		}
+	}
+
+	if (RT64.inspector != nullptr) {
+		char statsMessage[256] = "";
+    	sprintf(statsMessage, "Instances %d Lights %d", RT64.instanceCount, RT64.lightCount);
+    	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
 	}
 
 	// Camera interpolation reset.
