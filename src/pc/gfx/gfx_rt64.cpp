@@ -1816,12 +1816,12 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 			size_t floatCount = requiredVertexBufferSize / sizeof(float);
 			float *tempPtr = tempVertexBuffer;
 			float *prevPtr = dynMesh.prevVertexBuffer;
-			float *deltaPtr = dynMesh.deltaVertexBuffer;
+			float *newPtr = dynMesh.newVertexBuffer;
 			while (f < floatCount) {
-				*tempPtr = (*prevPtr) + (*deltaPtr) * frameWeight;
+				*tempPtr = gfx_rt64_lerp_float(*prevPtr, *newPtr, frameWeight);
 				tempPtr++;
 				prevPtr++;
-				deltaPtr++;
+				newPtr++;
 				f++;
 			}
 
@@ -1893,6 +1893,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 			size_t floatCount = dynMesh.vertexCount * imax;
 			float deltaValue = 0.0f;
 			const float Epsilon = 1e-6f;
+			const float MagnitudeThreshold = 10.0f;
 			while (f < floatCount) {
 				deltaValue = *newPtr - *prevPtr;
 
@@ -1901,15 +1902,31 @@ static void gfx_rt64_rapi_end_frame(void) {
 				case 0:
 				case 1:
 				case 2:
-					// TODO: Figure out how to skip sudden vertex movement.
+					// Skip interpolating objects that suddenly teleport the vertices around.
+					// This helps with effects like lava bubbles, snow, and other types of effects without
+					// having to generate UIDs for each individual particle.
+					// Since this relies on an arbitrary value to detect the magnitude difference, it might
+					// break depending on the game. The minimum value of 1.0 is also reliant on the fact
+					// the game never sends vertices with non-integer values when untransformed, making it
+					// the smallest possible value that isn't zero.
+					if ((fabsf(deltaValue) / std::max(fabsf(*deltaPtr), 1.0f)) >= MagnitudeThreshold) {
+						*prevPtr = *newPtr;
+					}
+
 					break;
 				// Texture coordinate interpolation.
 				case 7:
 				case 8:
 					if (dynMesh.useTexture) {
 						// Reuse previous delta if the delta values have different signs.
+						// This helps with textures that scroll and eventually reset to their starting
+						// position. Since the intended effect is usually to continue the scrolling motion,
+						// just reusing the previously known delta value that actually worked is usually a
+						// good enough strategy. This might break depending on the game if the UVs are used
+						// for anything that doesn't resemble this type of effect.
 						if ((deltaValue * (*deltaPtr)) < 0.0f) {
 							deltaValue = *deltaPtr;
+							*prevPtr = *newPtr - deltaValue;
 						}
 					}
 
