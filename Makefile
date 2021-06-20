@@ -706,7 +706,7 @@ all: $(BASEPACK_PATH)
 # phony target for building resources
 res: $(BASEPACK_PATH)
 
-ifeq ($(SKIP_BASEPACK),0)
+ifneq ($(SKIP_BASEPACK),1)
 # prepares the basepack.lst
 $(BASEPACK_LST): $(EXE)
 	@mkdir -p $(BUILD_DIR)/$(BASEDIR)
