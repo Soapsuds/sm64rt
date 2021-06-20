@@ -1892,15 +1892,34 @@ static void gfx_rt64_rapi_end_frame(void) {
 			size_t imax = dynMesh.vertexStride / sizeof(float);
 			size_t floatCount = dynMesh.vertexCount * imax;
 			float deltaValue = 0.0f;
+			const float Epsilon = 1e-6f;
 			while (f < floatCount) {
 				deltaValue = *newPtr - *prevPtr;
-				if (dynMesh.useTexture && ((i == 7) || (i == 8)) && ((deltaValue * (*deltaPtr)) < 0.0f)) {
-					// Reuse the existing delta value as it is.
-				}
-				else {
-					*deltaPtr = deltaValue;
+
+				switch (i) {
+				// Position interpolation.
+				case 0:
+				case 1:
+				case 2:
+					// TODO: Figure out how to skip sudden vertex movement.
+					break;
+				// Texture coordinate interpolation.
+				case 7:
+				case 8:
+					if (dynMesh.useTexture) {
+						// Reuse previous delta if the delta values have different signs.
+						if ((deltaValue * (*deltaPtr)) < 0.0f) {
+							deltaValue = *deltaPtr;
+						}
+					}
+
+					break;
+				// Any other vertex element.
+				default:
+					break;
 				}
 
+				*deltaPtr = deltaValue;
 				prevPtr++;
 				newPtr++;
 				deltaPtr++;
