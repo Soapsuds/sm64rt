@@ -42,7 +42,6 @@ using json = nlohmann::json;
 #define MAX_GEO_LAYOUT_STACK_SIZE		32
 #define CACHED_MESH_REQUIRED_FRAMES		3
 #define CACHED_MESH_MAX_PER_FRAME		1
-#define MAX_INSTANCES					1024
 #define MAX_LIGHTS						512
 #define MAX_LEVEL_LIGHTS				128
 #define MAX_DYNAMIC_LIGHTS				MAX_LIGHTS - MAX_LEVEL_LIGHTS
@@ -85,6 +84,21 @@ struct RecordedMesh {
     bool raytrace = false;
 };
 
+struct RecordedInstance {
+	RT64_INSTANCE *instance;
+	RT64_INSTANCE_DESC desc;
+
+	// Interpolated data.
+	RT64_MATRIX4 prevTransform;
+	RT64_MATRIX4 newTransform;
+	RT64_RECT prevScissorRect;
+	RT64_RECT newScissorRect;
+	RT64_RECT prevViewportRect;
+	RT64_RECT newViewportRect;
+	bool prevValid = false;
+	bool newValid = false;
+};
+
 struct RecordedTexture {
 	RT64_TEXTURE *texture;
 	bool linearFilter;
@@ -110,12 +124,13 @@ struct RecordedCamera {
 };
 
 struct RecordedDisplayList {
-	std::vector<RecordedMesh> prevMeshes;
+	std::vector<RecordedInstance> instances;
+	std::vector<RecordedMesh> meshes;
 	RT64_MATRIX4 prevTransform;
 	RT64_MATRIX4 newTransform;
-	int newCount = 0;
 	bool prevValid = false;
 	bool newValid = false;
+	int newCount = 0;
 };
 
 struct RecordedLight {
@@ -144,12 +159,6 @@ struct {
 	RT64_VIEW *view = nullptr;
 	RT64_MATERIAL defaultMaterial;
 	RT64_TEXTURE *blankTexture;
-	RT64_INSTANCE *instances[MAX_INSTANCES];
-	RT64_INSTANCE_DESC instanceDescs[MAX_INSTANCES];
-	RT64_MATRIX4 instanceTransformsCur[MAX_INSTANCES];
-	RT64_MATRIX4 instanceTransformsPrev[MAX_INSTANCES];
-	int instanceCount;
-	int instanceAllocCount;
 	std::unordered_map<uint32_t, uint64_t> textureHashIdMap;
 	std::unordered_map<uint32_t, RecordedTexture> textures;
 	std::unordered_map<uint64_t, RecordedMesh> staticMeshes;
@@ -157,7 +166,6 @@ struct {
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
 	std::unordered_map<uint32_t, RecordedDisplayList> displayLists;
 	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
-	int cachedMeshesPerFrame;
 	RT64_LIGHT lights[MAX_LIGHTS];
     unsigned int lightCount;
 	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
@@ -1127,10 +1135,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	// Initialize other attributes.
 	RT64.scissorRect = { 0, 0, 0, 0 };
 	RT64.viewportRect = { 0, 0, 0, 0 };
-	RT64.instanceCount = 0;
-	RT64.instanceAllocCount = 0;
     RT64.dynamicLightCount = 0;
-	RT64.cachedMeshesPerFrame = 0;
 	RT64.currentTile = 0;
 	memset(RT64.currentTextureIds, 0, sizeof(RT64.currentTextureIds));
 	RT64.shaderProgram = nullptr;
@@ -1347,7 +1352,7 @@ static inline float gfx_rt64_norm_texcoord(float s, uint8_t address_mode) {
 	return s - long(s);
 }
 
-static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, RecordedDisplayList &displayList, bool interpolate) {
+static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, RecordedDisplayList &displayList, bool prevValid, bool interpolate) {
 	assert(RT64.shaderProgram != nullptr);
 
 	// Calculate the required size for each vertex based on the shader.
@@ -1368,9 +1373,9 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	size_t vertexBufferSize = buf_vbo_len * sizeof(float);
 	hashStream.add(buf_vbo, vertexBufferSize);
     uint64_t hash = hashStream.hash();
-	if (displayList.prevValid && (displayList.newCount < displayList.prevMeshes.size())) {
+	if (prevValid && (displayList.newCount < displayList.meshes.size())) {
 		// Try reusing the mesh that was stored in this index first.
-		auto &dynMesh = displayList.prevMeshes[displayList.newCount];
+		auto &dynMesh = displayList.meshes[displayList.newCount];
 		uint64_t prevHash = dynMesh.prevVertexBufferHash;
 		if (hash != prevHash) {
 			// We can only reuse the mesh and interpolate if the vertex formats are compatible.
@@ -1410,12 +1415,12 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	}
 
 	// Make the vector large enough to fit the required meshes.
-	if (displayList.prevMeshes.size() < (displayList.newCount + 1)) {
-		displayList.prevMeshes.resize(displayList.newCount + 1);
+	if (displayList.meshes.size() < (displayList.newCount + 1)) {
+		displayList.meshes.resize(displayList.newCount + 1);
 	}
 
 	// Destroy any previous pointers if they exist.
-	auto &dynMesh = displayList.prevMeshes[displayList.newCount];
+	auto &dynMesh = displayList.meshes[displayList.newCount];
 	if (dynMesh.mesh != nullptr) {
 		free(dynMesh.prevVertexBuffer);
 		free(dynMesh.newVertexBuffer);
@@ -1444,17 +1449,6 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	memcpy(dynMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
 
 	return dynMesh.mesh;
-}
-
-int gfx_rt64_rapi_add_instance() {
-	assert(RT64.instanceCount < MAX_INSTANCES);
-	int instanceIndex = RT64.instanceCount++;
-	if (instanceIndex >= RT64.instanceAllocCount) {
-		RT64.instances[instanceIndex] = RT64.lib.CreateInstance(RT64.scene);
-		RT64.instanceAllocCount++;
-	}
-
-	return instanceIndex;
 }
 
 static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 prevTransform, RT64_MATRIX4 newTransform) {
@@ -1517,18 +1511,31 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	bool interpolate = (uid != 0);
 	uint32_t cms = 0, cmt = 0;
 	
-	// Create the instance.
-	int instanceIndex = gfx_rt64_rapi_add_instance();
-	RT64_INSTANCE *instance = RT64.instances[instanceIndex];
-
 	// Retrieve the previous transform for the display list with this UID and store the current one.
 	auto &displayList = RT64.displayLists[uid];
-	RT64.instanceTransformsCur[instanceIndex] = transform;
-	displayList.newTransform = transform;
+
+	// Make the vector large enough to fit the required instances.
+	if (displayList.instances.size() < (displayList.newCount + 1)) {
+		displayList.instances.resize(displayList.newCount + 1);
+	}
+
+	// Create the instance if it's not been created yet.
+	auto &displayListInstance = displayList.instances[displayList.newCount];
+	RT64_INSTANCE *instance = displayListInstance.instance;
+	if (instance == nullptr) {
+		instance = RT64.lib.CreateInstance(RT64.scene);
+		displayListInstance.instance = instance;
+	}
+
+	// Store all the data that can be interpolated.
+	displayListInstance.newScissorRect = RT64.scissorRect;
+	displayListInstance.newViewportRect = RT64.viewportRect;
+	displayListInstance.newTransform = transform;
+	displayListInstance.newValid = true;
 	displayList.newValid = true;
 
 	// Describe the instance.
-	RT64_INSTANCE_DESC &instDesc = RT64.instanceDescs[instanceIndex];
+	RT64_INSTANCE_DESC &instDesc = displayListInstance.desc;
 	instDesc.diffuseTexture = RT64.blankTexture;
 	instDesc.normalTexture = nullptr;
 	instDesc.specularTexture = nullptr;
@@ -1571,7 +1578,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	// Build material with applied mods.
 	instDesc.material = RT64.defaultMaterial;
 
-	RT64_MATRIX4 prevTransform = (displayList.prevValid && interpolate) ? displayList.prevTransform : transform;
+	RT64_MATRIX4 prevTransform = (displayListInstance.prevValid && interpolate) ? displayListInstance.prevTransform : transform;
 	if (RT64.graphNodeMod != nullptr) {
 		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, RT64.graphNodeMod, prevTransform, transform, false);
 	}
@@ -1580,8 +1587,12 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 		gfx_rt64_rapi_apply_mod(&instDesc.material, &instDesc.normalTexture, &instDesc.specularTexture, &interpolate, textureMod, prevTransform, transform, true);
 	}
 
-	// Interpolate transform if specified.
-	RT64.instanceTransformsPrev[instanceIndex] = interpolate ? prevTransform : transform;
+	// Skip interpolation if specified.
+	if (!displayListInstance.prevValid || !interpolate) {
+		displayListInstance.prevScissorRect = RT64.scissorRect;
+		displayListInstance.prevViewportRect = RT64.viewportRect;
+		displayListInstance.prevTransform = transform;
+	}
 
 	// Apply a higlight color if the material is selected.
 	if (highlightMaterial) {
@@ -1612,7 +1623,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	}
 
 	// Process the mesh that corresponds to the VBO.
-	instDesc.mesh = gfx_rt64_rapi_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace, displayList, interpolate);
+	instDesc.mesh = gfx_rt64_rapi_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace, displayList, displayListInstance.prevValid, interpolate);
 
 	// Mark the right instance flags.
 	instDesc.flags = 0;
@@ -1662,47 +1673,7 @@ static void gfx_rt64_rapi_shutdown(void) {
 }
 
 static void gfx_rt64_rapi_start_frame(void) {
-	// Display list cleanup.
-	auto dlIt = RT64.displayLists.begin();
-	while (dlIt != RT64.displayLists.end()) {
-		if (dlIt->second.newValid) {
-			for (auto &dynMesh : dlIt->second.prevMeshes) {
-				if (!dynMesh.newVertexBufferValid) {
-					continue;
-				}
-
-				float *swapBuffer = dynMesh.prevVertexBuffer;
-				uint64_t swapHash = dynMesh.prevVertexBufferHash;
-				dynMesh.prevVertexBuffer = dynMesh.newVertexBuffer;
-				dynMesh.prevVertexBufferHash = dynMesh.newVertexBufferHash;
-				dynMesh.newVertexBuffer = swapBuffer;
-				dynMesh.newVertexBufferHash = swapHash;
-				dynMesh.newVertexBufferValid = false;
-			}
-
-			dlIt->second.prevTransform = dlIt->second.newTransform;
-			dlIt->second.newCount = 0;
-			dlIt->second.prevValid = true;
-			dlIt->second.newValid = false;
-		}
-		else {
-			for (auto &dynMesh : dlIt->second.prevMeshes) {
-				free(dynMesh.prevVertexBuffer);
-				free(dynMesh.newVertexBuffer);
-				free(dynMesh.deltaVertexBuffer);
-				RT64.lib.DestroyMesh(dynMesh.mesh);
-			}
-
-			dlIt = RT64.displayLists.erase(dlIt);
-			continue;
-		}
-
-		dlIt++;
-	}
-
-    RT64.cachedMeshesPerFrame = 0;
 	RT64.background = true;
-    RT64.instanceCount = 0;
     RT64.graphNodeMod = nullptr;
 	if (RT64.inspector != nullptr) {
 		char marioMessage[256] = "";
@@ -1723,6 +1694,10 @@ static void gfx_rt64_rapi_start_frame(void) {
 	}
 }
 
+static inline int gfx_rt64_lerp_int(int a, int b, float t) {
+	return a + lround(t * (b - a));
+}
+
 static inline float gfx_rt64_lerp_float(float a, float b, float t) {
 	return a + t * (b - a);
 }
@@ -1732,6 +1707,15 @@ static inline RT64_VECTOR3 gfx_rt64_lerp_vector3(RT64_VECTOR3 a, RT64_VECTOR3 b,
 		gfx_rt64_lerp_float(a.x, b.x, t),
 		gfx_rt64_lerp_float(a.y, b.y, t),
 		gfx_rt64_lerp_float(a.z, b.z, t)
+	};
+}
+
+static inline RT64_RECT gfx_rt64_lerp_rect(RT64_RECT a, RT64_RECT b, float t) {
+	return {
+		gfx_rt64_lerp_int(a.x, b.x, t),
+		gfx_rt64_lerp_int(a.y, b.y, t),
+		gfx_rt64_lerp_int(a.w, b.w, t),
+		gfx_rt64_lerp_int(a.h, b.h, t)
 	};
 }
 
@@ -1790,15 +1774,19 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 
 	// Calculate the interpolated frame.
 	RT64.lib.SetViewPerspective(RT64.view, viewMatrix, fovRadians, RT64.camera.nearDist, RT64.camera.farDist);
-	for (int i = 0; i < RT64.instanceCount; i++) {
-		RT64.instanceDescs[i].transform = gfx_rt64_lerp_matrix(RT64.instanceTransformsPrev[i], RT64.instanceTransformsCur[i], frameWeight);
-		RT64.lib.SetInstanceDescription(RT64.instances[i], RT64.instanceDescs[i]);
-	}
 
-	// Interpolate the meshes.
+	// Interpolate the display lists.
 	auto displayListIt = RT64.displayLists.begin();
+	RT64_MATRIX4 dlTransform;
 	while (displayListIt != RT64.displayLists.end()) {
-		for (auto &dynMesh : displayListIt->second.prevMeshes) {
+		for (auto &dynInstance : displayListIt->second.instances) {
+			dynInstance.desc.transform = gfx_rt64_lerp_matrix(dynInstance.prevTransform, dynInstance.newTransform, frameWeight);
+			dynInstance.desc.scissorRect = gfx_rt64_lerp_rect(dynInstance.prevScissorRect, dynInstance.newScissorRect, frameWeight);
+			dynInstance.desc.viewportRect = gfx_rt64_lerp_rect(dynInstance.prevViewportRect, dynInstance.newViewportRect, frameWeight);
+			RT64.lib.SetInstanceDescription(dynInstance.instance, dynInstance.desc);
+		}
+
+		for (auto &dynMesh : displayListIt->second.meshes) {
 			if (!dynMesh.newVertexBufferValid) {
 				continue;
 			}
@@ -1853,13 +1841,6 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 }
 
 static void gfx_rt64_rapi_end_frame(void) {
-	// Check instances.
-    while (RT64.instanceAllocCount > RT64.instanceCount) {
-        int instanceIndex = RT64.instanceAllocCount - 1;
-        RT64.lib.DestroyInstance(RT64.instances[instanceIndex]);
-        RT64.instanceAllocCount--;
-    }
-
 	// Add all dynamic lights for this stage first.
 	{
 		// TODO: Move to draw frame when previous frame information is available.
@@ -1877,10 +1858,30 @@ static void gfx_rt64_rapi_end_frame(void) {
 		}
 	}
 
-	// Compute the delta vertex buffer for all interpolated display lists.
-	auto displayListIt = RT64.displayLists.begin();
-	while (displayListIt != RT64.displayLists.end()) {
-		for (auto &dynMesh : displayListIt->second.prevMeshes) {
+	// Process display lists.
+	auto dlIt = RT64.displayLists.begin();
+	while (dlIt != RT64.displayLists.end()) {
+		auto &dl = dlIt->second;
+
+		// Destroy all unused instances.
+		while (dl.instances.size() > dl.newCount) {
+			auto &dynInst = dl.instances.back();
+			RT64.lib.DestroyInstance(dynInst.instance);
+			dl.instances.pop_back();
+		}
+
+		// Destroy all unused meshes.
+		while (dl.meshes.size() > dl.newCount) {
+			auto &dynMesh = dl.meshes.back();
+			free(dynMesh.prevVertexBuffer);
+			free(dynMesh.newVertexBuffer);
+			free(dynMesh.deltaVertexBuffer);
+			RT64.lib.DestroyMesh(dynMesh.mesh);
+			dl.meshes.pop_back();
+		}
+
+		// Compute the delta vertex buffer.
+		for (auto &dynMesh : dl.meshes) {
 			if (!dynMesh.newVertexBufferValid) {
 				continue;
 			}
@@ -1945,7 +1946,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 			}
 		}
 
-		displayListIt++;
+		dlIt++;
 	}
 
 	gfx_rt64_rapi_draw_frame(0.5f);
@@ -1993,8 +1994,52 @@ static void gfx_rt64_rapi_end_frame(void) {
 
 	if (RT64.inspector != nullptr) {
 		char statsMessage[256] = "";
-    	sprintf(statsMessage, "Instances %d Lights %d", RT64.instanceCount, RT64.lightCount);
+    	sprintf(statsMessage, "Lights %d", RT64.lightCount);
     	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
+	}
+
+	// Display list cleanup.
+	dlIt = RT64.displayLists.begin();
+	while (dlIt != RT64.displayLists.end()) {
+		auto &dl = dlIt->second;
+
+		// Move attributes from new to prev for instances.
+		for (auto &dynInst : dl.instances) {
+			dynInst.prevTransform = dynInst.newTransform;
+			dynInst.prevScissorRect = dynInst.newScissorRect;
+			dynInst.prevViewportRect = dynInst.newViewportRect;
+			dynInst.prevValid = true;
+			dynInst.newValid = false;
+		}
+
+		// Move attributes from new to prev for meshes.
+		for (auto &dynMesh : dl.meshes) {
+			if (!dynMesh.newVertexBufferValid) {
+				continue;
+			}
+
+			float *swapBuffer = dynMesh.prevVertexBuffer;
+			uint64_t swapHash = dynMesh.prevVertexBufferHash;
+			dynMesh.prevVertexBuffer = dynMesh.newVertexBuffer;
+			dynMesh.prevVertexBufferHash = dynMesh.newVertexBufferHash;
+			dynMesh.newVertexBuffer = swapBuffer;
+			dynMesh.newVertexBufferHash = swapHash;
+			dynMesh.newVertexBufferValid = false;
+		}
+		
+		// Determine whether to keep or remove the display list.
+		if (dl.newValid) {
+			dl.prevTransform = dl.newTransform;
+			dl.prevValid = true;
+			dl.newValid = false;
+			dl.newCount = 0;
+		}
+		else {
+			dlIt = RT64.displayLists.erase(dlIt);
+			continue;
+		}
+
+		dlIt++;
 	}
 
 	// Camera interpolation reset.
