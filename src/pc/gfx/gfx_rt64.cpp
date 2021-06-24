@@ -291,7 +291,7 @@ json gfx_rt64_save_specular_map_mod(const std::string &specularTexName) {
 	return jspecular;
 }
 
-RT64_VECTOR3 transform_position_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
+inline RT64_VECTOR3 transform_position_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
 	RT64_VECTOR3 o;
 	o.x = v.x * m.m[0][0] + v.y * m.m[1][0] + v.z * m.m[2][0] + m.m[3][0];
 	o.y = v.x * m.m[0][1] + v.y * m.m[1][1] + v.z * m.m[2][1] + m.m[3][1];
@@ -299,7 +299,7 @@ RT64_VECTOR3 transform_position_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
 	return o;
 }
 
-RT64_VECTOR3 transform_direction_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
+inline RT64_VECTOR3 transform_direction_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
 	RT64_VECTOR3 o;
 	o.x = v.x * m.m[0][0] + v.y * m.m[1][0] + v.z * m.m[2][0];
 	o.y = v.x * m.m[0][1] + v.y * m.m[1][1] + v.z * m.m[2][1];
@@ -307,8 +307,22 @@ RT64_VECTOR3 transform_direction_affine(RT64_MATRIX4 m, RT64_VECTOR3 v) {
 	return o;
 }
 
-float vector_length(RT64_VECTOR3 v) {
+inline float vector_length(RT64_VECTOR3 v) {
 	return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline RT64_VECTOR3 normalize_vector(RT64_VECTOR3 v) {
+	float length = vector_length(v);
+	if (length > 0.0f) {
+		return { v.x / length, v.y / length, v.z / length };
+	}
+	else {
+		return { 0.0f, 0.0f, 0.0f };
+	}
+}
+
+inline float vector_dot_product(RT64_VECTOR3 a, RT64_VECTOR3 b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 json gfx_rt64_save_light(RT64_LIGHT *light) {
@@ -1878,6 +1892,26 @@ static void gfx_rt64_rapi_end_frame(void) {
 			free(dynMesh.deltaVertexBuffer);
 			RT64.lib.DestroyMesh(dynMesh.mesh);
 			dl.meshes.pop_back();
+		}
+		
+		// Detect sudden transformation changes and skip interpolation if necessary.
+		RT64_VECTOR3 prevX, prevY, prevZ;
+		RT64_VECTOR3 newX, newY, newZ;
+		float dotX, dotY, dotZ;
+		const float MinDot = sqrt(2.0f) / -2.0f;
+		for (auto &dynInstance : dl.instances) {
+			prevX = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 1.0f, 0.0f, 0.0f } ));
+			prevY = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 0.0f, 1.0f, 0.0f } ));
+			prevZ = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 0.0f, 0.0f, 1.0f } ));
+			newX = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 1.0f, 0.0f, 0.0f } ));
+			newY = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 0.0f, 1.0f, 0.0f } ));
+			newZ = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 0.0f, 0.0f, 1.0f } ));
+			dotX = vector_dot_product(prevX, newX);
+			dotY = vector_dot_product(prevY, newY);
+			dotZ = vector_dot_product(prevZ, newZ);
+			if ((dotX < MinDot) || (dotY < MinDot) || (dotZ < MinDot)) {
+				dynInstance.prevTransform = dynInstance.newTransform;
+			}
 		}
 
 		// Compute the delta vertex buffer.
