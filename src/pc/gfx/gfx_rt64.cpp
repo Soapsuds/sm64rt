@@ -353,11 +353,13 @@ void gfx_rt64_load_level_lights() {
 				unsigned int a = jarea["id"];
 				assert(a < MAX_AREAS);
 				RT64.levelLightCounts[l][a] = 0;
-				for (const json &jlight : jarea["lights"]) {
-					assert(RT64.levelLightCounts[l][a] < MAX_LEVEL_LIGHTS);
-					unsigned int i = RT64.levelLightCounts[l][a]++;
-					RT64_LIGHT *light = &RT64.levelLights[l][a][i];
-					gfx_rt64_load_light(jlight, light);
+				if (jarea.find("lights") != jarea.end()) {
+					for (const json &jlight : jarea["lights"]) {
+						assert(RT64.levelLightCounts[l][a] < MAX_LEVEL_LIGHTS);
+						unsigned int i = RT64.levelLightCounts[l][a]++;
+						RT64_LIGHT *light = &RT64.levelLights[l][a][i];
+						gfx_rt64_load_light(jlight, light);
+					}
 				}
 			}
 		}
@@ -1139,6 +1141,8 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.scene = RT64.lib.CreateScene(RT64.device);
 	RT64.view = RT64.lib.CreateView(RT64.scene);
 
+	RT64.sceneDesc.ambientBaseColor = { 0.15f, 0.15f, 0.20f };
+	RT64.sceneDesc.ambientNoGIColor = { 0.10f, 0.15f, 0.20f };
 	RT64.sceneDesc.eyeLightDiffuseColor = { 0.1f, 0.1f, 0.1f };
 	RT64.sceneDesc.eyeLightSpecularColor = { 0.1f, 0.1f, 0.1f };
 	RT64.sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
