@@ -157,6 +157,7 @@ struct {
 	RT64_INSPECTOR *inspector = nullptr;
 	RT64_SCENE *scene = nullptr;
 	RT64_VIEW *view = nullptr;
+	RT64_SCENE_DESC sceneDesc;
 	RT64_MATERIAL defaultMaterial;
 	RT64_TEXTURE *blankTexture;
 	std::unordered_map<uint32_t, uint64_t> textureHashIdMap;
@@ -950,7 +951,6 @@ void gfx_rt64_apply_config() {
 	desc.maxLightSamples = configRT64MaxLights;
 	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
 	desc.giBounces = configRT64GI ? 1 : 0;
-	desc.ambGiMixWeight = configRT64GIStrength / 100.0f;
 	desc.denoiserEnabled = configRT64Denoiser;
 	RT64.lib.SetViewDescription(RT64.view, desc);
 }
@@ -1138,6 +1138,13 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	// Setup scene and view.
 	RT64.scene = RT64.lib.CreateScene(RT64.device);
 	RT64.view = RT64.lib.CreateView(RT64.scene);
+
+	RT64.sceneDesc.eyeLightDiffuseColor = { 0.1f, 0.1f, 0.1f };
+	RT64.sceneDesc.eyeLightSpecularColor = { 0.1f, 0.1f, 0.1f };
+	RT64.sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
+	RT64.sceneDesc.giDiffuseStrength = 0.7f;
+	RT64.sceneDesc.giSkyStrength = 0.35f;
+	RT64.lib.SetSceneDescription(RT64.scene, RT64.sceneDesc);
 
 	// Start timers.
 	QueryPerformanceFrequency(&RT64.Frequency);
@@ -1701,6 +1708,9 @@ static void gfx_rt64_rapi_start_frame(void) {
 		RT64.lib.PrintMessageInspector(RT64.inspector, "F1: Toggle inspectors");
 		RT64.lib.PrintMessageInspector(RT64.inspector, "F5: Save all configuration");
 
+		// Inspect the current scene.
+		RT64.lib.SetSceneInspector(RT64.inspector, &RT64.sceneDesc);
+
 		// Inspect the current level's lights.
         RT64_LIGHT *lights = RT64.levelLights[levelIndex][areaIndex];
         int *lightCount = &RT64.levelLightCounts[levelIndex][areaIndex];
@@ -1857,10 +1867,12 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 static void gfx_rt64_rapi_end_frame(void) {
 	// Add all dynamic lights for this stage first.
 	{
-		// TODO: Move to draw frame when previous frame information is available.
     	int levelIndex = gfx_rt64_get_level_index();
     	int areaIndex = gfx_rt64_get_area_index();
 		gfx_rt64_rapi_set_special_stage_lights(levelIndex, areaIndex);
+
+		// Update the scene's description.
+		RT64.lib.SetSceneDescription(RT64.scene, RT64.sceneDesc);
 
 		// Build lights array out of the static level lights and the dynamic lights.
 		int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
