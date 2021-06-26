@@ -60,11 +60,11 @@ extern bool         configSkipIntro;
 extern bool         configDiscordRPC;
 #endif
 #ifdef RAPI_RT64
+extern unsigned int configRT64TargetFPS;
 extern unsigned int configRT64ResScale;
 extern unsigned int configRT64MaxLights;
 extern bool         configRT64SphereLights;
 extern bool         configRT64GI;
-extern unsigned int configRT64GIStrength;
 extern bool         configRT64Denoiser;
 #endif
 

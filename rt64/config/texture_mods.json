@@ -921,7 +921,13 @@
             "name": "textures/generic/bob_textures.02000.rgba16"
         },
         {
-            "materialMod": null,
+            "materialMod": {
+                "specularColor": [
+                    0.15000000596046448,
+                    0.15000000596046448,
+                    0.15000000596046448
+                ]
+            },
             "name": "textures/generic/bob_textures.05800.rgba16"
         },
         {
@@ -1646,9 +1652,9 @@
         {
             "materialMod": {
                 "specularColor": [
-                    0.5,
-                    0.5,
-                    0.5
+                    0.10000000149011612,
+                    0.10000000149011612,
+                    0.10000000149011612
                 ]
             },
             "name": "textures/outside/castle_grounds_textures.04000.rgba16"
@@ -1656,9 +1662,9 @@
         {
             "materialMod": {
                 "specularColor": [
-                    0.5,
-                    0.5,
-                    0.5
+                    0.10000000149011612,
+                    0.10000000149011612,
+                    0.10000000149011612
                 ]
             },
             "name": "textures/outside/castle_grounds_textures.04800.rgba16"
@@ -1666,9 +1672,9 @@
         {
             "materialMod": {
                 "specularColor": [
-                    0.5,
-                    0.5,
-                    0.5
+                    0.10000000149011612,
+                    0.10000000149011612,
+                    0.10000000149011612
                 ]
             },
             "name": "textures/outside/castle_grounds_textures.08000.rgba16"
@@ -1693,13 +1699,7 @@
         },
         {
             "materialMod": {
-                "diffuseColorMix": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.699999988079071
-                ],
-                "reflectionFactor": 0.375,
+                "reflectionFactor": 0.699999988079071,
                 "reflectionFresnelFactor": 0.75,
                 "refractionFactor": 0.949999988079071,
                 "solidAlphaMultiplier": 0.75,

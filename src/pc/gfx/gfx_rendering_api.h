@@ -36,13 +36,16 @@ struct GfxRenderingAPI {
 #ifndef GFX_SEPARATE_PROJECTIONS
     void (*draw_triangles)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris);
 #else
-    void (*set_camera_perspective)(float fov_degrees, float near_dist, float far_dist);
+    void (*set_camera_perspective)(float fov_degrees, float near_dist, float far_dist, bool can_interpolate);
     void (*set_camera_matrix)(float matrix[4][4]);
-    void (*draw_triangles_ortho)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided);
-    void (*draw_triangles_persp)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided);
+    void (*draw_triangles_ortho)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, uint32_t uid);
+    void (*draw_triangles_persp)(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, uint32_t uid);
 #endif
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
     void (*set_graph_node_mod)(void *graph_node_mod);
+#endif
+#ifdef GFX_SEPARATE_SKYBOX
+    void (*set_skybox_texture)(uint32_t texture_id);
 #endif
     void (*init)(void);
     void (*on_resize)(void);

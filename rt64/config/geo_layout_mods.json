@@ -946,6 +946,16 @@
         {
             "materialMod": null,
             "name": "yoshi_geo"
-        }
+        },
+		{
+            "materialMod": null,
+			"interpolationEnabled": false,
+			"name": "intro_geo_00035C"
+		},
+		{
+            "materialMod": null,
+			"interpolationEnabled": false,
+			"name": "intro_geo_0003B8"
+		}
     ]
 }

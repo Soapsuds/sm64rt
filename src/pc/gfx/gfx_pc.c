@@ -213,7 +213,7 @@ static unsigned long get_time(void) {
 
 #include "goddard/gd_math.h"
 
-static struct Matrices {
+typedef struct {
     float model_matrix[4][4];
     float inv_model_matrix[4][4];
     float extra_model_matrix[4][4];
@@ -223,26 +223,31 @@ static struct Matrices {
     float graph_inv_view_matrix[4][4];
     float prev_model_matrix[4][4];
     float offset_matrix[4][4];
+} Matrices;
+    
+static struct {
     bool model_matrix_used;
     bool is_ortho;
     bool double_sided;
     bool persp_triangles_drawn;
     bool camera_matrix_set;
+    s32 current_uid;
+    Matrices mat;
 } separate_projections;
 
-void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist) {
-    gfx_rapi->set_camera_perspective(fov_degrees, near_dist, far_dist);
+void gfx_set_camera_perspective(float fov_degrees, float near_dist, float far_dist, bool can_interpolate) {
+    gfx_rapi->set_camera_perspective(fov_degrees, near_dist, far_dist, can_interpolate);
 }
 
 void gfx_set_camera_matrix(float mat[4][4]) {
     // Store camera matrix.
-    memcpy(separate_projections.camera_matrix, mat, sizeof(float) * 16);
-    gfx_rapi->set_camera_matrix(separate_projections.camera_matrix);
+    memcpy(separate_projections.mat.camera_matrix, mat, sizeof(float) * 16);
+    gfx_rapi->set_camera_matrix(separate_projections.mat.camera_matrix);
 
     // Since this call comes from the graph node, store it so we can reverse its effect 
     // on the model view matrices later.
-    memcpy(separate_projections.graph_view_matrix, mat, sizeof(float) * 16);
-    gd_inverse_mat4f(&separate_projections.graph_view_matrix, &separate_projections.graph_inv_view_matrix);
+    memcpy(separate_projections.mat.graph_view_matrix, mat, sizeof(float) * 16);
+    gd_inverse_mat4f(&separate_projections.mat.graph_view_matrix, &separate_projections.mat.graph_inv_view_matrix);
 
     separate_projections.camera_matrix_set = true;
 }
@@ -328,10 +333,10 @@ static void gfx_flush(void) {
         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
 #else
         if (separate_projections.is_ortho) {
-            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided);
+            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided, separate_projections.current_uid);
         }
         else {
-            gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.model_matrix, separate_projections.double_sided);
+            gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.mat.model_matrix, separate_projections.double_sided, separate_projections.current_uid);
             separate_projections.persp_triangles_drawn = true;
         }
 
@@ -736,6 +741,49 @@ static bool preload_texture(void *user, const char *path) {
     return true;
 }
 
+#ifdef GFX_SEPARATE_SKYBOX
+
+#define MAX_SKYBOX_COUNT 10
+
+#define SKYBOX_DIR FS_TEXTUREDIR "/textures/skyboxes/"
+
+const char *skybox_paths[MAX_SKYBOX_COUNT] = {
+    SKYBOX_DIR "water.png",
+    SKYBOX_DIR "bitfs.png",
+    SKYBOX_DIR "wdw.png",
+    SKYBOX_DIR "cloud_floor.png",
+    SKYBOX_DIR "ccm.png",
+    SKYBOX_DIR "ssl.png",
+    SKYBOX_DIR "bbh.png",
+    SKYBOX_DIR "bidw.png",
+    SKYBOX_DIR "clouds.png",
+    SKYBOX_DIR "bits.png"
+};
+
+struct {
+    uint32_t textures[MAX_SKYBOX_COUNT];
+} skybox;
+
+void gfx_preload_skybox(uint8_t skybox_id) {
+    const char *skyboxPath = skybox_paths[skybox_id];
+    skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxPath);
+    gfx_rapi->select_texture(0, skybox.textures[skybox_id]);
+    load_texture(skyboxPath);
+}
+
+void gfx_init_skybox() {
+    // Preload all the skyboxes so there's no stutter when loading the levels.
+    for (int i = 0; i < MAX_SKYBOX_COUNT; i++) {
+        gfx_preload_skybox(i);
+    }
+}
+
+void gfx_set_skybox(uint8_t skybox_id) {
+    gfx_rapi->set_skybox_texture(skybox.textures[skybox_id]);
+}
+
+#endif
+
 #endif // EXTERNAL_DATA
 
 static void import_texture(int tile) {
@@ -860,7 +908,7 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
         if (parameters & G_MTX_LOAD) {
             memcpy(rsp.P_matrix, matrix, sizeof(matrix));
 #ifdef GFX_SEPARATE_PROJECTIONS
-            gd_set_identity_mat4(&separate_projections.extra_model_matrix);
+            gd_set_identity_mat4(&separate_projections.mat.extra_model_matrix);
             separate_projections.is_ortho = (matrix[3][3] != 0.0f);
 #endif
         } else {
@@ -887,12 +935,12 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
             if (!separate_projections.is_ortho && is_affine(matrix) && !is_identity(matrix)) {
                 // Fixes Lakitu camera shake and Bowser key cutscene by adding the offset to the camera matrix.
                 if (separate_projections.camera_matrix_set && !separate_projections.persp_triangles_drawn) {
-                    gfx_matrix_mul(separate_projections.modified_camera_matrix, separate_projections.camera_matrix, matrix);
-                    gfx_rapi->set_camera_matrix(separate_projections.modified_camera_matrix);
+                    gfx_matrix_mul(separate_projections.mat.modified_camera_matrix, separate_projections.mat.camera_matrix, matrix);
+                    gfx_rapi->set_camera_matrix(separate_projections.mat.modified_camera_matrix);
                 }
                 // Fixes Goddard by adding the offset to the model matrix.
                 else {
-                    gfx_matrix_mul(separate_projections.extra_model_matrix, separate_projections.extra_model_matrix, matrix);
+                    gfx_matrix_mul(separate_projections.mat.extra_model_matrix, separate_projections.mat.extra_model_matrix, matrix);
                 }
             }
 #endif
@@ -912,8 +960,8 @@ static void gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-    gfx_matrix_mul(separate_projections.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.graph_inv_view_matrix);
-    gfx_matrix_mul(separate_projections.model_matrix, separate_projections.model_matrix, separate_projections.extra_model_matrix);
+    gfx_matrix_mul(separate_projections.mat.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.mat.graph_inv_view_matrix);
+    gfx_matrix_mul(separate_projections.mat.model_matrix, separate_projections.mat.model_matrix, separate_projections.mat.extra_model_matrix);
 #endif
 }
 
@@ -925,8 +973,8 @@ static void gfx_sp_pop_matrix(uint32_t count) {
                 gfx_matrix_mul(rsp.MP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-                gfx_matrix_mul(separate_projections.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.graph_inv_view_matrix);
-                gfx_matrix_mul(separate_projections.model_matrix, separate_projections.model_matrix, separate_projections.extra_model_matrix);
+                gfx_matrix_mul(separate_projections.mat.model_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], separate_projections.mat.graph_inv_view_matrix);
+                gfx_matrix_mul(separate_projections.mat.model_matrix, separate_projections.mat.model_matrix, separate_projections.mat.extra_model_matrix);
 #endif
             }
         }
@@ -941,19 +989,19 @@ static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
 #ifdef GFX_SEPARATE_PROJECTIONS
     if (!separate_projections.model_matrix_used) {
         if (dest_index > 0) {
-            inverse_affine(&separate_projections.model_matrix, &separate_projections.inv_model_matrix);
-            gfx_matrix_mul(separate_projections.offset_matrix, separate_projections.prev_model_matrix, separate_projections.inv_model_matrix);
+            inverse_affine(&separate_projections.mat.model_matrix, &separate_projections.mat.inv_model_matrix);
+            gfx_matrix_mul(separate_projections.mat.offset_matrix, separate_projections.mat.prev_model_matrix, separate_projections.mat.inv_model_matrix);
 
             for (size_t i = 0; i < dest_index; i++) {
-                transform_loaded_vertex(i, &separate_projections.offset_matrix);
+                transform_loaded_vertex(i, &separate_projections.mat.offset_matrix);
             }
 
             for (size_t i = dest_index + n_vertices; i < MAX_VERTICES; i++) {
-                transform_loaded_vertex(i, &separate_projections.offset_matrix);
+                transform_loaded_vertex(i, &separate_projections.mat.offset_matrix);
             }
         }
 
-        memcpy(separate_projections.prev_model_matrix, separate_projections.model_matrix, sizeof(float) * 16);
+        memcpy(separate_projections.mat.prev_model_matrix, separate_projections.mat.model_matrix, sizeof(float) * 16);
         separate_projections.model_matrix_used = true;
     }
 #endif
@@ -1998,9 +2046,18 @@ static void gfx_run_dl(Gfx* cmd) {
                 gfx_dp_set_color_image(C0(21, 3), C0(19, 2), C0(0, 11), seg_addr(cmd->words.w1));
                 break;
 #ifdef GFX_ENABLE_GRAPH_NODE_MODS
-            case G_NOOP:
-                gfx_rapi->set_graph_node_mod((void *)(cmd->words.w1));
+            case G_NOOP: {
+                GraphNodeGfxInfo *gfxInfo = (GraphNodeGfxInfo *)(cmd->words.w1);
+                if (gfxInfo != NULL) {
+                    separate_projections.current_uid = gfxInfo->UID;
+                    gfx_rapi->set_graph_node_mod(gfxInfo->graphNodeMod);
+                }
+                else {
+                    separate_projections.current_uid = 0;
+                    gfx_rapi->set_graph_node_mod(NULL);
+                }
                 break;
+            }
 #endif
         }
         ++cmd;
@@ -2055,6 +2112,10 @@ void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, co
 
     for (size_t i = 0; i < sizeof(precomp_shaders) / sizeof(uint32_t); i++)
         gfx_lookup_or_create_shader_program(precomp_shaders[i]);
+
+#ifdef GFX_SEPARATE_SKYBOX
+    gfx_init_skybox();
+#endif
 }
 
 #ifdef EXTERNAL_DATA
@@ -2078,13 +2139,13 @@ void gfx_start_frame(void) {
     gfx_current_dimensions.aspect_ratio = (float)gfx_current_dimensions.width / (float)gfx_current_dimensions.height;
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-    gd_set_identity_mat4(&separate_projections.extra_model_matrix);
-    gd_set_identity_mat4(&separate_projections.camera_matrix);
-    gfx_rapi->set_camera_matrix(separate_projections.camera_matrix);
-    separate_projections.camera_matrix_set = false;
+    gd_set_identity_mat4(&separate_projections.mat.extra_model_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.camera_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.graph_view_matrix);
+    gd_set_identity_mat4(&separate_projections.mat.graph_inv_view_matrix);
+    gfx_rapi->set_camera_matrix(separate_projections.mat.camera_matrix);
 
-    gd_set_identity_mat4(&separate_projections.graph_view_matrix);
-    gd_set_identity_mat4(&separate_projections.graph_inv_view_matrix);
+    separate_projections.camera_matrix_set = false;
     separate_projections.is_ortho = false;
     separate_projections.model_matrix_used = false;
     separate_projections.double_sided = false;

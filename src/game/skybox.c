@@ -10,6 +10,7 @@
 #include "segment2.h"
 #include "sm64.h"
 
+#include "pc/gfx/gfx_pc.h"
 
 /**
  * @file skybox.c
@@ -292,6 +293,7 @@ Gfx *init_skybox_display_list(s8 player, s8 background, s8 colorIndex) {
 Gfx *create_skybox_facing_camera(s8 player, s8 background, f32 fov,
                                     f32 posX, f32 posY, f32 posZ,
                                     f32 focX, f32 focY, f32 focZ) {
+#ifndef GFX_SEPARATE_SKYBOX
     f32 cameraFaceX = focX - posX;
     f32 cameraFaceY = focY - posY;
     f32 cameraFaceZ = focZ - posZ;
@@ -312,4 +314,8 @@ Gfx *create_skybox_facing_camera(s8 player, s8 background, f32 fov,
     sSkyBoxInfo[player].upperLeftTile = get_top_left_tile_idx(player);
 
     return init_skybox_display_list(player, background, colorIndex);
+#else
+    gfx_set_skybox(background);
+    return NULL;
+#endif
 }
