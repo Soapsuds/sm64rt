@@ -1761,6 +1761,22 @@ static inline RT64_MATRIX4 gfx_rt64_lerp_matrix(const RT64_MATRIX4 &a, const RT6
 	return c;
 }
 
+static inline bool gfx_rt64_skip_matrix_lerp(const RT64_MATRIX4 &a, const RT64_MATRIX4 &b, const float minDot) {
+	RT64_VECTOR3 prevX, prevY, prevZ;
+	RT64_VECTOR3 newX, newY, newZ;
+	float dotX, dotY, dotZ;
+	prevX = normalize_vector(transform_direction_affine(a, { 1.0f, 0.0f, 0.0f } ));
+	prevY = normalize_vector(transform_direction_affine(a, { 0.0f, 1.0f, 0.0f } ));
+	prevZ = normalize_vector(transform_direction_affine(a, { 0.0f, 0.0f, 1.0f } ));
+	newX = normalize_vector(transform_direction_affine(b, { 1.0f, 0.0f, 0.0f } ));
+	newY = normalize_vector(transform_direction_affine(b, { 0.0f, 1.0f, 0.0f } ));
+	newZ = normalize_vector(transform_direction_affine(b, { 0.0f, 0.0f, 1.0f } ));
+	dotX = vector_dot_product(prevX, newX);
+	dotY = vector_dot_product(prevY, newY);
+	dotZ = vector_dot_product(prevZ, newZ);
+	return (dotX < minDot) || (dotY < minDot) || (dotZ < minDot);
+}
+
 static void gfx_rt64_rapi_set_special_stage_lights(int levelIndex, int areaIndex) {
 	// Dynamic Lakitu camera light for Shifting Sand Land Pyramid.
 	if ((levelIndex == 8) && (areaIndex == 2)) {
@@ -1871,6 +1887,14 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 }
 
 static void gfx_rt64_rapi_end_frame(void) {
+	// Detect if camera interpolation should be skipped.
+	// Attempts to fix sudden camera changes like the ones in BBH.
+	if (RT64.prevCameraValid) {
+		if (gfx_rt64_skip_matrix_lerp(RT64.prevCamera.viewMatrix, RT64.camera.viewMatrix, 0.0f)) {
+			RT64.prevCameraValid = false;
+		}
+	}
+
 	// Add all dynamic lights for this stage first.
 	{
     	int levelIndex = gfx_rt64_get_level_index();
@@ -1913,21 +1937,9 @@ static void gfx_rt64_rapi_end_frame(void) {
 		}
 		
 		// Detect sudden transformation changes and skip interpolation if necessary.
-		RT64_VECTOR3 prevX, prevY, prevZ;
-		RT64_VECTOR3 newX, newY, newZ;
-		float dotX, dotY, dotZ;
 		const float MinDot = sqrt(2.0f) / -2.0f;
 		for (auto &dynInstance : dl.instances) {
-			prevX = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 1.0f, 0.0f, 0.0f } ));
-			prevY = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 0.0f, 1.0f, 0.0f } ));
-			prevZ = normalize_vector(transform_direction_affine(dynInstance.prevTransform, { 0.0f, 0.0f, 1.0f } ));
-			newX = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 1.0f, 0.0f, 0.0f } ));
-			newY = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 0.0f, 1.0f, 0.0f } ));
-			newZ = normalize_vector(transform_direction_affine(dynInstance.newTransform, { 0.0f, 0.0f, 1.0f } ));
-			dotX = vector_dot_product(prevX, newX);
-			dotY = vector_dot_product(prevY, newY);
-			dotZ = vector_dot_product(prevZ, newZ);
-			if ((dotX < MinDot) || (dotY < MinDot) || (dotZ < MinDot)) {
+			if (gfx_rt64_skip_matrix_lerp(dynInstance.prevTransform, dynInstance.newTransform, MinDot)) {
 				dynInstance.prevTransform = dynInstance.newTransform;
 			}
 		}
