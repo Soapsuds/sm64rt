@@ -333,7 +333,10 @@ static void gfx_flush(void) {
         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
 #else
         if (separate_projections.is_ortho) {
-            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided, separate_projections.current_uid);
+            // TODO: An empty UID is passed because the drawing order is not currently preserved properly for 2D instances if it's used.
+            // This should ideally be reverted once a way to preserve the drawing order is implemented. However, it's not required to do
+            // this until HUD interpolation is supported.
+            gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.double_sided, 0);
         }
         else {
             gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, separate_projections.mat.model_matrix, separate_projections.double_sided, separate_projections.current_uid);

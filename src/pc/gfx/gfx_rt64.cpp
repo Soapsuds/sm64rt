@@ -1537,7 +1537,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	bool linearFilter = false;
 	bool interpolate = (uid != 0);
 	uint32_t cms = 0, cmt = 0;
-	
+
 	// Retrieve the previous transform for the display list with this UID and store the current one.
 	auto &displayList = RT64.displayLists[uid];
 
@@ -1915,6 +1915,8 @@ static void gfx_rt64_rapi_end_frame(void) {
 	}
 
 	// Process display lists.
+	unsigned int rasterInstanceCount = 0;
+	unsigned int rtInstanceCount = 0;
 	auto dlIt = RT64.displayLists.begin();
 	while (dlIt != RT64.displayLists.end()) {
 		auto &dl = dlIt->second;
@@ -1946,6 +1948,13 @@ static void gfx_rt64_rapi_end_frame(void) {
 
 		// Compute the delta vertex buffer.
 		for (auto &dynMesh : dl.meshes) {
+			if (dynMesh.raytrace) {
+				rtInstanceCount++;
+			}
+			else {
+				rasterInstanceCount++;
+			}
+
 			if (!dynMesh.newVertexBufferValid) {
 				continue;
 			}
@@ -2013,6 +2022,13 @@ static void gfx_rt64_rapi_end_frame(void) {
 		dlIt++;
 	}
 
+	// Print debugging messages.
+	if (RT64.inspector != nullptr) {
+		char statsMessage[256] = "";
+    	sprintf(statsMessage, "RT %d Raster %d Lights %d", rtInstanceCount, rasterInstanceCount, RT64.lightCount);
+    	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
+	}
+
 	// Draw as many frames as indicated by the target framerate for each update.
 	const unsigned int framesPerUpdate = RT64.targetFPS / 30;
 	const float weightPerFrame = 1.0f / framesPerUpdate;
@@ -2058,12 +2074,6 @@ static void gfx_rt64_rapi_end_frame(void) {
 		if (RT64.inspector != nullptr) {
 			RT64.lib.SetMaterialInspector(RT64.inspector, texMod->materialMod, textureName.c_str());
 		}
-	}
-
-	if (RT64.inspector != nullptr) {
-		char statsMessage[256] = "";
-    	sprintf(statsMessage, "Lights %d", RT64.lightCount);
-    	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
 	}
 
 	// Display list cleanup.
