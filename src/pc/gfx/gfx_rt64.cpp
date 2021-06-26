@@ -214,6 +214,7 @@ struct {
 	RecordedMod *graphNodeMod;
 
 	// Timing.
+	unsigned int targetFPS = 30;
 	LARGE_INTEGER StartingTime, EndingTime;
 	LARGE_INTEGER Frequency;
 	bool dropNextFrame;
@@ -954,6 +955,7 @@ void gfx_rt64_apply_config() {
 	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
 	desc.giBounces = configRT64GI ? 1 : 0;
 	desc.denoiserEnabled = configRT64Denoiser;
+	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);
 }
 
@@ -1999,8 +2001,12 @@ static void gfx_rt64_rapi_end_frame(void) {
 		dlIt++;
 	}
 
-	gfx_rt64_rapi_draw_frame(0.5f);
-	gfx_rt64_rapi_draw_frame(1.0f);
+	// Draw as many frames as indicated by the target framerate for each update.
+	const unsigned int framesPerUpdate = RT64.targetFPS / 30;
+	const float weightPerFrame = 1.0f / framesPerUpdate;
+	for (int f = 1; f <= framesPerUpdate; f++) {
+		gfx_rt64_rapi_draw_frame(f * weightPerFrame);
+	}
 
 	// Left click allows to pick a texture for editing from the viewport.
 	if (RT64.pickTextureNextFrame) {
