@@ -149,7 +149,12 @@ struct RecordedLight {
 //		128 - Particles Tier B
 
 struct {
-	HWND hwnd;
+	// Window data.
+	HWND hwnd = NULL;
+	bool isFullScreen = false;
+	bool lastMaximizedState = false;
+	bool useVsync = true;
+	RECT lastWindowRect;
 	
 	// Library data.
 	RT64_LIBRARY lib;
@@ -214,6 +219,7 @@ struct {
 	RecordedMod *graphNodeMod;
 
 	// Timing.
+	std::vector<double> prevFrametimes;
 	unsigned int targetFPS = 30;
 	LARGE_INTEGER StartingTime, EndingTime;
 	LARGE_INTEGER Frequency;
@@ -583,6 +589,11 @@ void gfx_rt64_toggle_inspector() {
 	else {
 		RT64.inspector = RT64.lib.CreateInspector(RT64.device);
 	}
+
+	// Update cursor visibility while in fullscreen according to the inspector's visibility.
+	if (RT64.isFullScreen) {
+		ShowCursor(RT64.inspector != nullptr);
+	}
 }
 
 void gfx_rt64_load_material_mod_uint(const json &jmatmod, RT64_MATERIAL *materialMod, const char *name, int flag, unsigned int *dstValue, int *dstAttributes) {
@@ -948,6 +959,65 @@ static void onkeyup(WPARAM w_param, LPARAM l_param) {
     }
 }
 
+// Adapted from gfx_dxgi.cpp
+static void gfx_rt64_toggle_full_screen(bool enable) {
+    // Windows 7 + flip mode + waitable object can't go to exclusive fullscreen,
+    // so do borderless instead. If DWM is enabled, this means we get one monitor
+    // sync interval of latency extra. On Win 10 however (maybe Win 8 too), due to
+    // "fullscreen optimizations" the latency is eliminated.
+
+    if (enable == RT64.isFullScreen) {
+        return;
+    }
+
+    if (!enable) {
+        RECT r = RT64.lastWindowRect;
+
+        // Set in window mode with the last saved position and size
+        SetWindowLongPtr(RT64.hwnd, GWL_STYLE, WS_VISIBLE | WS_OVERLAPPEDWINDOW);
+
+        if (RT64.lastMaximizedState) {
+            SetWindowPos(RT64.hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
+            ShowWindow(RT64.hwnd, SW_MAXIMIZE);
+        } else {
+            SetWindowPos(RT64.hwnd, NULL, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED);
+            ShowWindow(RT64.hwnd, SW_RESTORE);
+        }
+
+        ShowCursor(true);
+    } else {
+        // Save if window is maximized or not
+        WINDOWPLACEMENT windowPlacement;
+        windowPlacement.length = sizeof(WINDOWPLACEMENT);
+        GetWindowPlacement(RT64.hwnd, &windowPlacement);
+        RT64.lastMaximizedState = windowPlacement.showCmd == SW_SHOWMAXIMIZED;
+
+        // Save window position and size if the window is not maximized
+        GetWindowRect(RT64.hwnd, &RT64.lastWindowRect);
+        configWindow.x = RT64.lastWindowRect.left;
+        configWindow.y = RT64.lastWindowRect.top;
+        configWindow.w = RT64.lastWindowRect.right - RT64.lastWindowRect.left;
+        configWindow.h = RT64.lastWindowRect.bottom - RT64.lastWindowRect.top;
+
+        // Get in which monitor the window is
+        HMONITOR hmonitor = MonitorFromWindow(RT64.hwnd, MONITOR_DEFAULTTONEAREST);
+
+        // Get info from that monitor
+        MONITORINFOEX monitorInfo;
+        monitorInfo.cbSize = sizeof(MONITORINFOEX);
+        GetMonitorInfo(hmonitor, &monitorInfo);
+        RECT r = monitorInfo.rcMonitor;
+
+        // Set borderless full screen to that monitor
+        SetWindowLongPtr(RT64.hwnd, GWL_STYLE, WS_VISIBLE | WS_POPUP);
+        SetWindowPos(RT64.hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED);
+
+        ShowCursor(RT64.inspector != nullptr);
+    }
+
+    RT64.isFullScreen = enable;
+}
+
 void gfx_rt64_apply_config() {
 	RT64_VIEW_DESC desc;
 	desc.resolutionScale = configRT64ResScale / 100.0f;
@@ -955,13 +1025,34 @@ void gfx_rt64_apply_config() {
 	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
 	desc.giBounces = configRT64GI ? 1 : 0;
 	desc.denoiserEnabled = configRT64Denoiser;
+
+	RT64.useVsync = configWindow.vsync;
 	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);
+
+	// Adapted from gfx_dxgi.cpp
+	if (configWindow.fullscreen != RT64.isFullScreen) {
+        gfx_rt64_toggle_full_screen(configWindow.fullscreen);
+	}
+
+	if (!RT64.isFullScreen) {
+		const int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        const int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        const int xpos = (configWindow.x == WAPI_WIN_CENTERPOS) ? (screenWidth - configWindow.w) * 0.5 : configWindow.x;
+        const int ypos = (configWindow.y == WAPI_WIN_CENTERPOS) ? (screenHeight - configWindow.h) * 0.5 : configWindow.y;
+        RECT wr = { xpos, ypos, xpos + (int)configWindow.w, ypos + (int)configWindow.h };
+        AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
+        SetWindowPos(RT64.hwnd, NULL, wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top, SWP_NOACTIVATE | SWP_NOZORDER);
+	}
 }
 
 static void gfx_rt64_reset_logic_frame(void) {
 	RT64.lib.SetViewSkyPlane(RT64.view, nullptr);
     RT64.dynamicLightCount = 0;
+}
+
+static bool gfx_rt64_use_vsync() {
+	return RT64.useVsync && !RT64.turboMode;
 }
 
 LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -970,6 +1061,14 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 	}
 	
 	switch (message) {
+	case WM_SYSKEYDOWN:
+		// Alt + Enter.
+		if ((wParam == VK_RETURN) && ((lParam & 1 << 30) == 0)) {
+			gfx_rt64_toggle_full_screen(!RT64.isFullScreen);
+			break;
+		} else {
+			return DefWindowProcW(hWnd, message, wParam, lParam);
+		}
 	case WM_CLOSE:
 		PostQuitMessage(0);
 		game_exit();
@@ -1031,7 +1130,7 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 			
 			// Just draw the current frame while paused.
 			if (RT64.pauseMode) {
-				RT64.lib.DrawDevice(RT64.device, RT64.turboMode ? 0 : 1);
+				RT64.lib.DrawDevice(RT64.device, gfx_rt64_use_vsync() ? 1 : 0);
 			}
 			// Run one game iteration.
 			else if (RT64.run_one_game_iter != nullptr) {
@@ -1044,6 +1143,12 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 				if (RT64.inspector != nullptr) {
 					char message[64];
 					RT64.lib.PrintClearInspector(RT64.inspector);
+
+					for (int f = 0; f < RT64.prevFrametimes.size(); f++) {
+						sprintf(message, "RT64 #%d: %.3f ms\n", f, RT64.prevFrametimes[f]);
+						RT64.lib.PrintMessageInspector(RT64.inspector, message);
+					}
+					
 					sprintf(message, "FRAMETIME: %.3f ms\n", ElapsedMicroseconds.QuadPart / 1000.0);
 					RT64.lib.PrintMessageInspector(RT64.inspector, message);
 				}
@@ -1548,6 +1653,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 
 	// Create the instance if it's not been created yet.
 	auto &displayListInstance = displayList.instances[displayList.newCount];
+	RT64_INSTANCE_DESC &instDesc = displayListInstance.desc;
 	RT64_INSTANCE *instance = displayListInstance.instance;
 	if (instance == nullptr) {
 		instance = RT64.lib.CreateInstance(RT64.scene);
@@ -1562,7 +1668,6 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	displayList.newValid = true;
 
 	// Describe the instance.
-	RT64_INSTANCE_DESC &instDesc = displayListInstance.desc;
 	instDesc.diffuseTexture = RT64.blankTexture;
 	instDesc.normalTexture = nullptr;
 	instDesc.specularTexture = nullptr;
@@ -1619,6 +1724,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 		displayListInstance.prevScissorRect = RT64.scissorRect;
 		displayListInstance.prevViewportRect = RT64.viewportRect;
 		displayListInstance.prevTransform = transform;
+		instDesc.transform = transform;
 	}
 
 	// Apply a higlight color if the material is selected.
@@ -1693,7 +1799,12 @@ static void gfx_rt64_rapi_init(void) {
 }
 
 static void gfx_rt64_rapi_on_resize(void) {
-
+	if (!RT64.isFullScreen) {
+		uint32_t w = 0, h = 0;
+		gfx_rt64_wapi_get_dimensions(&w, &h);
+		configWindow.w = w;
+		configWindow.h = h;
+	}
 }
 
 static void gfx_rt64_rapi_shutdown(void) {
@@ -1826,6 +1937,7 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	RT64_MATRIX4 dlTransform;
 	while (displayListIt != RT64.displayLists.end()) {
 		for (auto &dynInstance : displayListIt->second.instances) {
+			dynInstance.desc.previousTransform = dynInstance.desc.transform;
 			dynInstance.desc.transform = gfx_rt64_lerp_matrix(dynInstance.prevTransform, dynInstance.newTransform, frameWeight);
 			dynInstance.desc.scissorRect = gfx_rt64_lerp_rect(dynInstance.prevScissorRect, dynInstance.newScissorRect, frameWeight);
 			dynInstance.desc.viewportRect = gfx_rt64_lerp_rect(dynInstance.prevViewportRect, dynInstance.newViewportRect, frameWeight);
@@ -1883,7 +1995,7 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	RT64.lib.SetSceneLights(RT64.scene, RT64.lights, RT64.lightCount);
 
 	// Draw frame.
-	RT64.lib.DrawDevice(RT64.device, RT64.turboMode ? 0 : 1);
+	RT64.lib.DrawDevice(RT64.device, gfx_rt64_use_vsync() ? 1 : 0);
 }
 
 static void gfx_rt64_rapi_end_frame(void) {
@@ -1943,6 +2055,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 		for (auto &dynInstance : dl.instances) {
 			if (gfx_rt64_skip_matrix_lerp(dynInstance.prevTransform, dynInstance.newTransform, MinDot)) {
 				dynInstance.prevTransform = dynInstance.newTransform;
+				dynInstance.desc.transform = dynInstance.newTransform;
 			}
 		}
 
@@ -2032,8 +2145,14 @@ static void gfx_rt64_rapi_end_frame(void) {
 	// Draw as many frames as indicated by the target framerate for each update.
 	const unsigned int framesPerUpdate = RT64.targetFPS / 30;
 	const float weightPerFrame = 1.0f / framesPerUpdate;
-	for (int f = 1; f <= framesPerUpdate; f++) {
-		gfx_rt64_rapi_draw_frame(f * weightPerFrame);
+	LARGE_INTEGER StartTime, EndTime, ElapsedMicroseconds;
+	RT64.prevFrametimes.resize(framesPerUpdate);
+	for (int f = 0; f < framesPerUpdate; f++) {
+		QueryPerformanceCounter(&StartTime);
+		gfx_rt64_rapi_draw_frame((f + 1) * weightPerFrame);
+		QueryPerformanceCounter(&EndTime);
+		elapsed_time(StartTime, EndTime, RT64.Frequency, ElapsedMicroseconds);
+		RT64.prevFrametimes[f] = ElapsedMicroseconds.QuadPart / 1000.0;
 	}
 
 	// Left click allows to pick a texture for editing from the viewport.
