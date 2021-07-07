@@ -63,6 +63,7 @@ extern bool         configDiscordRPC;
 extern unsigned int configRT64TargetFPS;
 extern unsigned int configRT64ResScale;
 extern unsigned int configRT64MaxLights;
+extern unsigned int configRT64MotionBlurStrength;
 extern bool         configRT64SphereLights;
 extern bool         configRT64GI;
 extern bool         configRT64Denoiser;

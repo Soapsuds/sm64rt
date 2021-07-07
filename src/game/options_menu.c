@@ -84,6 +84,7 @@ static const u8 optsRT64Str[][32] = {
     { TEXT_OPT_SPHEREL },
     { TEXT_OPT_GI },
     { TEXT_OPT_DENOISER },
+    { TEXT_OPT_MOTBLUR },
 };
 #endif
 
@@ -255,6 +256,7 @@ static struct Option optsRT64[] = {
     DEF_OPT_TOGGLE( optsRT64Str[3], &configRT64SphereLights ),
     DEF_OPT_TOGGLE( optsRT64Str[4], &configRT64GI ),
     DEF_OPT_TOGGLE( optsRT64Str[5], &configRT64Denoiser ),
+    DEF_OPT_SCROLL( optsRT64Str[6], &configRT64MotionBlurStrength, 0, 100, 5 ),
     DEF_OPT_BUTTON( optsVideoStr[9], optvideo_apply ),
 };
 #endif

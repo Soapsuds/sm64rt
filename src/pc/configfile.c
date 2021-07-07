@@ -97,6 +97,7 @@ bool         configDiscordRPC    = true;
 unsigned int configRT64TargetFPS = 30;
 unsigned int configRT64ResScale = 100;
 unsigned int configRT64MaxLights = 6;
+unsigned int configRT64MotionBlurStrength = 0;
 bool         configRT64SphereLights = false;
 bool         configRT64GI = false;
 bool         configRT64Denoiser = false;
@@ -150,12 +151,13 @@ static const struct ConfigOption options[] = {
     {.name = "discordrpc_enable",    .type = CONFIG_TYPE_BOOL, .boolValue = &configDiscordRPC},
     #endif
     #ifdef RAPI_RT64
-    {.name = "rt64_target_fps",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64TargetFPS},
-    {.name = "rt64_res_scale",       .type = CONFIG_TYPE_UINT, .uintValue = &configRT64ResScale},
-    {.name = "rt64_max_lights",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
-    {.name = "rt64_sphere_lights",   .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
-    {.name = "rt64_gi",              .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
-    {.name = "rt64_denoiser",        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
+    {.name = "rt64_target_fps",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64TargetFPS},
+    {.name = "rt64_res_scale",                 .type = CONFIG_TYPE_UINT, .uintValue = &configRT64ResScale},
+    {.name = "rt64_max_lights",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
+    {.name = "rt64_sphere_lights",             .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
+    {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
+    {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
+    {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},
     #endif
 };
 

@@ -333,7 +333,7 @@ void gfx_rt64_apply_config() {
 	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
 	desc.giBounces = configRT64GI ? 1 : 0;
 	desc.denoiserEnabled = configRT64Denoiser;
-
+	desc.motionBlurStrength = configRT64MotionBlurStrength / 100.0f;
 	RT64.useVsync = configWindow.vsync;
 	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);

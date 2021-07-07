@@ -93,6 +93,7 @@
 #define TEXT_OPT_SPHEREL   _("Sphere Lights")
 #define TEXT_OPT_GI        _("Global Illumination")
 #define TEXT_OPT_DENOISER  _("Denoiser")
+#define TEXT_OPT_MOTBLUR   _("Motion Blur")
 
 #else // VERSION
 
@@ -165,6 +166,7 @@
 #define TEXT_OPT_SPHEREL   _("Sphere Lights")
 #define TEXT_OPT_GI        _("Global Illumination")
 #define TEXT_OPT_DENOISER  _("Denoiser")
+#define TEXT_OPT_MOTBLUR   _("Motion Blur")
 
 #endif // VERSION
 
