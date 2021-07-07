@@ -320,6 +320,10 @@
             "name": "actors/spindrift/spindrift_head.rgba16"
         },
         {
+            "materialMod": null,
+            "name": "actors/star/star_surface.rgba16"
+        },
+        {
             "materialMod": {
                 "ignoreNormalFactor": 1.0,
                 "specularColor": [

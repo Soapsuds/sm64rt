@@ -138,6 +138,12 @@ struct RecordedLight {
 	RT64_LIGHT newLight;
 };
 
+struct AreaLighting {
+	RT64_SCENE_DESC sceneDesc;
+	RT64_LIGHT lights[MAX_LEVEL_LIGHTS];
+	int lightCount = 0;
+};
+
 //	Convention of bits for different lights.
 //		1 	- Directional Tier A
 //		2 	- Directional Tier B
@@ -155,27 +161,36 @@ struct {
 	bool lastMaximizedState = false;
 	bool useVsync = true;
 	RECT lastWindowRect;
+
+	// Game data.
+	RT64_MATERIAL defaultMaterial;
+	RT64_TEXTURE *blankTexture = nullptr;
+	AreaLighting levelAreaLighting[MAX_LEVELS][MAX_AREAS];
+	std::unordered_map<void *, std::string> geoLayoutNameMap;
+	std::map<std::string, void *> nameGeoLayoutMap;
+	std::unordered_map<void *, RecordedMod *> geoLayoutMods;
+	std::unordered_map<uint64_t, std::string> texNameMap;
+	std::map<std::string, uint64_t> nameTexMap;
+	std::unordered_map<uint64_t, RecordedMod *> texMods;
+	std::map<uint64_t, uint64_t> texHashAliasMap;
+	std::map<uint64_t, std::vector<uint64_t>> texHashAliasesMap;
+	std::unordered_map<uint32_t, uint64_t> textureHashIdMap;
 	
-	// Library data.
+	// Runtime data.
 	RT64_LIBRARY lib;
 	RT64_DEVICE *device = nullptr;
 	RT64_INSPECTOR *inspector = nullptr;
 	RT64_SCENE *scene = nullptr;
 	RT64_VIEW *view = nullptr;
-	RT64_SCENE_DESC sceneDesc;
-	RT64_MATERIAL defaultMaterial;
-	RT64_TEXTURE *blankTexture;
-	std::unordered_map<uint32_t, uint64_t> textureHashIdMap;
 	std::unordered_map<uint32_t, RecordedTexture> textures;
 	std::unordered_map<uint64_t, RecordedMesh> staticMeshes;
 	std::unordered_map<uint64_t, RecordedMesh> dynamicMeshes;
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
 	std::unordered_map<uint32_t, RecordedDisplayList> displayLists;
+	std::unordered_map<void *, RecordedMod *> graphNodeMods;
 	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
 	RT64_LIGHT lights[MAX_LIGHTS];
     unsigned int lightCount;
-	RT64_LIGHT levelLights[MAX_LEVELS][MAX_AREAS][MAX_LEVEL_LIGHTS];
-	int levelLightCounts[MAX_LEVELS][MAX_AREAS];
     RecordedLight dynamicLights[MAX_DYNAMIC_LIGHTS];
     unsigned int dynamicLightCount;
 
@@ -184,19 +199,6 @@ struct {
 	bool pickTextureHighlight;
 	uint64_t pickedTextureHash;
 	std::unordered_map<RT64_INSTANCE *, uint64_t> lastInstanceTextureHashes;
-
-	// Geo layout mods.
-	std::unordered_map<void *, std::string> geoLayoutNameMap;
-	std::map<std::string, void *> nameGeoLayoutMap;
-	std::unordered_map<void *, RecordedMod *> geoLayoutMods;
-	std::unordered_map<void *, RecordedMod *> graphNodeMods;
-	
-	// Texture mods.
-	std::unordered_map<uint64_t, std::string> texNameMap;
-	std::map<std::string, uint64_t> nameTexMap;
-	std::unordered_map<uint64_t, RecordedMod *> texMods;
-	std::map<uint64_t, uint64_t> texHashAliasMap;
-	std::map<uint64_t, std::vector<uint64_t>> texHashAliasesMap;
 
 	// Camera.
 	RecordedCamera camera;
@@ -246,37 +248,6 @@ uint64_t gfx_rt64_get_texture_name_hash(const std::string &name) {
 	RT64.texNameMap[hash] = name;
 	RT64.nameTexMap[name] = hash;
 	return hash;
-}
-
-void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
-	// General parameters
-	light->position.x = jlight["position"][0];
-	light->position.y = jlight["position"][1];
-	light->position.z = jlight["position"][2];
-	light->attenuationRadius = jlight["attenuationRadius"];
-	light->pointRadius = jlight["pointRadius"];
-	light->diffuseColor.x = jlight["diffuseColor"][0];
-	light->diffuseColor.y = jlight["diffuseColor"][1];
-	light->diffuseColor.z = jlight["diffuseColor"][2];
-	light->shadowOffset = jlight["shadowOffset"];
-	light->attenuationExponent = jlight["attenuationExponent"];
-	light->flickerIntensity = jlight["flickerIntensity"];
-	light->groupBits = jlight["groupBits"];
-
-	// Backwards compatibility
-	if (jlight.find("specularIntensity") != jlight.end()) {
-		float specularIntensity = jlight["specularIntensity"];
-		light->specularColor.x = specularIntensity * light->diffuseColor.x;
-		light->specularColor.y = specularIntensity * light->diffuseColor.y;
-		light->specularColor.z = specularIntensity * light->diffuseColor.z;
-	}
-	
-	// New parameters
-	if (jlight.find("specularColor") != jlight.end()) {
-		light->specularColor.x = jlight["specularColor"][0];
-		light->specularColor.y = jlight["specularColor"][1];
-		light->specularColor.z = jlight["specularColor"][2];
-	}
 }
 
 uint64_t gfx_rt64_load_normal_map_mod(const json &jnormal) {
@@ -333,18 +304,76 @@ inline float vector_dot_product(RT64_VECTOR3 a, RT64_VECTOR3 b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+RT64_VECTOR3 gfx_rt64_load_vector3(const json &jvector) {
+	float x = jvector[0];
+	float y = jvector[1];
+	float z = jvector[2];
+	return { x, y, z };
+}
+
+json gfx_rt64_save_vector3(RT64_VECTOR3 v) {
+	return { v.x, v.y, v.z };
+}
+
+void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
+	// General parameters
+	light->position = gfx_rt64_load_vector3(jlight["position"]);
+	light->attenuationRadius = jlight["attenuationRadius"];
+	light->pointRadius = jlight["pointRadius"];
+	light->diffuseColor = gfx_rt64_load_vector3(jlight["diffuseColor"]);
+	light->shadowOffset = jlight["shadowOffset"];
+	light->attenuationExponent = jlight["attenuationExponent"];
+	light->flickerIntensity = jlight["flickerIntensity"];
+	light->groupBits = jlight["groupBits"];
+
+	// Backwards compatibility
+	if (jlight.find("specularIntensity") != jlight.end()) {
+		float specularIntensity = jlight["specularIntensity"];
+		light->specularColor.x = specularIntensity * light->diffuseColor.x;
+		light->specularColor.y = specularIntensity * light->diffuseColor.y;
+		light->specularColor.z = specularIntensity * light->diffuseColor.z;
+	}
+	
+	// New parameters
+	if (jlight.find("specularColor") != jlight.end()) {
+		light->specularColor = gfx_rt64_load_vector3(jlight["specularColor"]);
+	}
+}
+
 json gfx_rt64_save_light(RT64_LIGHT *light) {
 	json jlight;
-	jlight["position"] = { light->position.x, light->position.y, light->position.z };
+	jlight["position"] = gfx_rt64_save_vector3(light->position);
 	jlight["attenuationRadius"] = light->attenuationRadius;
 	jlight["pointRadius"] = light->pointRadius;
-	jlight["diffuseColor"] = { light->diffuseColor.x, light->diffuseColor.y, light->diffuseColor.z };
-	jlight["specularColor"] = { light->specularColor.x, light->specularColor.y, light->specularColor.z };
+	jlight["diffuseColor"] = gfx_rt64_save_vector3(light->diffuseColor);
+	jlight["specularColor"] = gfx_rt64_save_vector3(light->specularColor);
 	jlight["shadowOffset"] = light->shadowOffset;
 	jlight["attenuationExponent"] = light->attenuationExponent;
 	jlight["flickerIntensity"] = light->flickerIntensity;
 	jlight["groupBits"] = light->groupBits;
 	return jlight;
+}
+
+void gfx_rt64_load_scene_description(const json &jscene, RT64_SCENE_DESC *sceneDesc) {
+	sceneDesc->ambientBaseColor = gfx_rt64_load_vector3(jscene["ambientBaseColor"]);
+	sceneDesc->ambientNoGIColor = gfx_rt64_load_vector3(jscene["ambientNoGIColor"]);
+	sceneDesc->eyeLightDiffuseColor = gfx_rt64_load_vector3(jscene["eyeLightDiffuseColor"]);
+	sceneDesc->eyeLightSpecularColor = gfx_rt64_load_vector3(jscene["eyeLightSpecularColor"]);
+	sceneDesc->skyHSLModifier = gfx_rt64_load_vector3(jscene["skyHSLModifier"]);
+	sceneDesc->giDiffuseStrength = jscene["giDiffuseStrength"];
+	sceneDesc->giSkyStrength = jscene["giSkyStrength"];
+}
+
+json gfx_rt64_save_scene_description(RT64_SCENE_DESC *sceneDesc) {
+	json jscene;
+	jscene["ambientBaseColor"] = gfx_rt64_save_vector3(sceneDesc->ambientBaseColor);
+	jscene["ambientNoGIColor"] = gfx_rt64_save_vector3(sceneDesc->ambientNoGIColor);
+	jscene["eyeLightDiffuseColor"] = gfx_rt64_save_vector3(sceneDesc->eyeLightDiffuseColor);
+	jscene["eyeLightSpecularColor"] = gfx_rt64_save_vector3(sceneDesc->eyeLightSpecularColor);
+	jscene["skyHSLModifier"] = gfx_rt64_save_vector3(sceneDesc->skyHSLModifier);
+	jscene["giDiffuseStrength"] = sceneDesc->giDiffuseStrength;
+	jscene["giSkyStrength"] = sceneDesc->giSkyStrength;
+	return jscene;
 }
 
 void gfx_rt64_load_level_lights() {
@@ -359,14 +388,19 @@ void gfx_rt64_load_level_lights() {
 			for (const json &jarea : jlevel["areas"]) {
 				unsigned int a = jarea["id"];
 				assert(a < MAX_AREAS);
-				RT64.levelLightCounts[l][a] = 0;
+				RT64.levelAreaLighting[l][a].lightCount = 0;
 				if (jarea.find("lights") != jarea.end()) {
 					for (const json &jlight : jarea["lights"]) {
-						assert(RT64.levelLightCounts[l][a] < MAX_LEVEL_LIGHTS);
-						unsigned int i = RT64.levelLightCounts[l][a]++;
-						RT64_LIGHT *light = &RT64.levelLights[l][a][i];
+						assert(RT64.levelAreaLighting[l][a].lightCount < MAX_LEVEL_LIGHTS);
+						unsigned int i = RT64.levelAreaLighting[l][a].lightCount++;
+						RT64_LIGHT *light = &RT64.levelAreaLighting[l][a].lights[i];
 						gfx_rt64_load_light(jlight, light);
 					}
+				}
+
+				if (jarea.find("scene") != jarea.end()) {
+					RT64_SCENE_DESC *sceneDesc = &RT64.levelAreaLighting[l][a].sceneDesc;
+					gfx_rt64_load_scene_description(jarea["scene"], sceneDesc);
 				}
 			}
 		}
@@ -387,12 +421,15 @@ void gfx_rt64_save_level_lights() {
 			for (int a = 0; a < MAX_AREAS; a++) {
 				json jarea;
 				jarea["id"] = a;
-				for (int i = 0; i < RT64.levelLightCounts[l][a]; i++) {
+				for (int i = 0; i < RT64.levelAreaLighting[l][a].lightCount; i++) {
 					json jlight;
-					RT64_LIGHT *light = &RT64.levelLights[l][a][i];
+					RT64_LIGHT *light = &RT64.levelAreaLighting[l][a].lights[i];
 					jlight = gfx_rt64_save_light(light);
 					jarea["lights"].push_back(jlight);
 				}
+
+				RT64_SCENE_DESC *sceneDesc = &RT64.levelAreaLighting[l][a].sceneDesc;
+				jarea["scene"] = gfx_rt64_save_scene_description(sceneDesc);
 
 				jlevel["areas"].push_back(jarea);
 			}
@@ -1248,15 +1285,6 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.scene = RT64.lib.CreateScene(RT64.device);
 	RT64.view = RT64.lib.CreateView(RT64.scene);
 
-	RT64.sceneDesc.ambientBaseColor = { 0.15f, 0.15f, 0.20f };
-	RT64.sceneDesc.ambientNoGIColor = { 0.10f, 0.15f, 0.20f };
-	RT64.sceneDesc.eyeLightDiffuseColor = { 0.1f, 0.1f, 0.1f };
-	RT64.sceneDesc.eyeLightSpecularColor = { 0.1f, 0.1f, 0.1f };
-	RT64.sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
-	RT64.sceneDesc.giDiffuseStrength = 0.7f;
-	RT64.sceneDesc.giSkyStrength = 0.35f;
-	RT64.lib.SetSceneDescription(RT64.scene, RT64.sceneDesc);
-
 	// Start timers.
 	QueryPerformanceFrequency(&RT64.Frequency);
 	QueryPerformanceCounter(&RT64.StartingTime);
@@ -1329,28 +1357,37 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.defaultMaterial.fogEnabled = false;
 
 	// Initialize the global lights to their default values.
-	memset(RT64.levelLights, 0, sizeof(RT64.levelLights));
-    memset(RT64.levelLightCounts, 0, sizeof(RT64.levelLightCounts));
     for (int l = 0; l < MAX_LEVELS; l++) {
         for (int a = 0; a < MAX_AREAS; a++) {
-            RT64.levelLights[l][a][0].diffuseColor.x = 0.3f;
-            RT64.levelLights[l][a][0].diffuseColor.y = 0.35f;
-            RT64.levelLights[l][a][0].diffuseColor.z = 0.45f;
+			auto &areaLighting = RT64.levelAreaLighting[l][a];
+			memset(areaLighting.lights, 0, sizeof(areaLighting.lights));
+			areaLighting.lightCount = 0;
 
-            RT64.levelLights[l][a][1].position.x = 100000.0f;
-            RT64.levelLights[l][a][1].position.y = 200000.0f;
-            RT64.levelLights[l][a][1].position.z = 100000.0f;
-            RT64.levelLights[l][a][1].diffuseColor.x = 0.8f;
-            RT64.levelLights[l][a][1].diffuseColor.y = 0.75f;
-            RT64.levelLights[l][a][1].diffuseColor.z = 0.65f;
-            RT64.levelLights[l][a][1].attenuationRadius = 1e11;
-			RT64.levelLights[l][a][1].pointRadius = 5000.0f;
-            RT64.levelLights[l][a][1].specularColor = { 0.8f, 0.75f, 0.65f };
-            RT64.levelLights[l][a][1].shadowOffset = 0.0f;
-            RT64.levelLights[l][a][1].attenuationExponent = 0.0f;
-			RT64.levelLights[l][a][1].groupBits = RT64_LIGHT_GROUP_DEFAULT;
-            
-            RT64.levelLightCounts[l][a] = 2;
+			// Configure the default area lighting scene description.
+			auto &sceneDesc = areaLighting.sceneDesc;
+			sceneDesc.ambientBaseColor = { 0.20f, 0.20f, 0.25f };
+			sceneDesc.ambientNoGIColor = { 0.10f, 0.15f, 0.20f };
+			sceneDesc.eyeLightDiffuseColor = { 0.1f, 0.1f, 0.1f };
+			sceneDesc.eyeLightSpecularColor = { 0.1f, 0.1f, 0.1f };
+			sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
+			sceneDesc.giDiffuseStrength = 0.7f;
+			sceneDesc.giSkyStrength = 0.35f;
+
+			// Configure a default directional sun.
+			RT64_LIGHT &light = areaLighting.lights[0];
+            light.position.x = 100000.0f;
+            light.position.y = 200000.0f;
+            light.position.z = 100000.0f;
+            light.diffuseColor.x = 0.8f;
+            light.diffuseColor.y = 0.75f;
+            light.diffuseColor.z = 0.65f;
+            light.attenuationRadius = 1e11;
+			light.pointRadius = 5000.0f;
+            light.specularColor = { 0.8f, 0.75f, 0.65f };
+            light.shadowOffset = 0.0f;
+            light.attenuationExponent = 0.0f;
+			light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
+            areaLighting.lightCount = 1;
         }
     }
 
@@ -1826,11 +1863,11 @@ static void gfx_rt64_rapi_start_frame(void) {
 		RT64.lib.PrintMessageInspector(RT64.inspector, "F5: Save all configuration");
 
 		// Inspect the current scene.
-		RT64.lib.SetSceneInspector(RT64.inspector, &RT64.sceneDesc);
+		RT64.lib.SetSceneInspector(RT64.inspector, &RT64.levelAreaLighting[levelIndex][areaIndex].sceneDesc);
 
 		// Inspect the current level's lights.
-        RT64_LIGHT *lights = RT64.levelLights[levelIndex][areaIndex];
-        int *lightCount = &RT64.levelLightCounts[levelIndex][areaIndex];
+        RT64_LIGHT *lights = RT64.levelAreaLighting[levelIndex][areaIndex].lights;
+        int *lightCount = &RT64.levelAreaLighting[levelIndex][areaIndex].lightCount;
 		RT64.lib.SetLightsInspector(RT64.inspector, lights, lightCount, MAX_LEVEL_LIGHTS);
 	}
 }
@@ -1981,9 +2018,9 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	// Interpolate the dynamic lights.
 	int levelIndex = gfx_rt64_get_level_index();
 	int areaIndex = gfx_rt64_get_area_index();
-	int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
+	int areaLightCount = RT64.levelAreaLighting[levelIndex][areaIndex].lightCount;
 	for (int i = 0; i < RT64.dynamicLightCount; i++) {
-		auto &light = RT64.lights[levelLightCount + i];
+		auto &light = RT64.lights[areaLightCount + i];
 		const auto &prevLight = RT64.dynamicLights[i].prevLight;
 		const auto &newLight = RT64.dynamicLights[i].newLight;
 		light.position = gfx_rt64_lerp_vector3(prevLight.position, newLight.position, frameWeight);
@@ -2014,15 +2051,16 @@ static void gfx_rt64_rapi_end_frame(void) {
 		gfx_rt64_rapi_set_special_stage_lights(levelIndex, areaIndex);
 
 		// Update the scene's description.
-		RT64.lib.SetSceneDescription(RT64.scene, RT64.sceneDesc);
+		const auto &areaLighting = RT64.levelAreaLighting[levelIndex][areaIndex];
+		RT64.lib.SetSceneDescription(RT64.scene, areaLighting.sceneDesc);
 
 		// Build lights array out of the static level lights and the dynamic lights.
-		int levelLightCount = RT64.levelLightCounts[levelIndex][areaIndex];
-		RT64.lightCount = levelLightCount + RT64.dynamicLightCount;
+		int areaLightCount = areaLighting.lightCount;
+		RT64.lightCount = areaLightCount + RT64.dynamicLightCount;
 		assert(RT64.lightCount <= MAX_LIGHTS);
-		memcpy(&RT64.lights[0], &RT64.levelLights[levelIndex][areaIndex], sizeof(RT64_LIGHT) * levelLightCount);
+		memcpy(RT64.lights, areaLighting.lights, sizeof(RT64_LIGHT) * areaLightCount);
 		for (int i = 0; i < RT64.dynamicLightCount; i++) {
-			memcpy(&RT64.lights[levelLightCount + i], &RT64.dynamicLights[i].newLight, sizeof(RT64_LIGHT));
+			memcpy(&RT64.lights[areaLightCount + i], &RT64.dynamicLights[i].newLight, sizeof(RT64_LIGHT));
 		}
 	}
 
