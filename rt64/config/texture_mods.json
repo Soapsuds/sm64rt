@@ -349,11 +349,11 @@
         {
             "materialMod": {
                 "specularColor": [
-                    5.0,
-                    5.0,
-                    5.0
+                    2.5,
+                    2.5,
+                    2.5
                 ],
-                "specularExponent": 5.0
+                "specularExponent": 2.5
             },
             "name": "actors/warp_pipe/warp_pipe_side.rgba16"
         },
@@ -980,7 +980,7 @@
         },
         {
             "materialMod": {
-                "reflectionFactor": 0.03999999910593033,
+                "reflectionFactor": 0.05999999865889549,
                 "reflectionFresnelFactor": 0.03999999910593033
             },
             "name": "textures/inside/inside_castle_textures.04000.rgba16"
