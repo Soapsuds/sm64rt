@@ -185,6 +185,7 @@ void gfx_rt64_rapi_preload_shaders() {
 	gfx_rt64_rapi_preload_shader(0x1045045, 0, 0, 0, 0, false, false);
 	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 0, 0, true, false);
 	gfx_rt64_rapi_preload_shader(0x1045045, 1, 1, 0, 2, false, false);
+	gfx_rt64_rapi_preload_shader(0x1045A00, 0, 1, 0, 0, false, false);
 	gfx_rt64_rapi_preload_shader(0x1045A00, 1, 1, 2, 2, false, false);
 	gfx_rt64_rapi_preload_shader(0x1081081, 0, 0, 0, 0, false, false);
 	gfx_rt64_rapi_preload_shader(0x1200045, 1, 1, 2, 2, false, false);
