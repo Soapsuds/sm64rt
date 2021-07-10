@@ -795,6 +795,17 @@
         },
         {
             "materialMod": {
+                "lightGroupMaskBits": 0,
+                "selfLight": [
+                    1.0,
+                    1.0,
+                    1.0
+                ]
+            },
+            "name": "levels/wmotr/3.rgba16"
+        },
+        {
+            "materialMod": {
                 "reflectionFactor": 0.10000000149011612,
                 "reflectionFresnelFactor": 0.10000000149011612
             },
