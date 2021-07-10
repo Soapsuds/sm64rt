@@ -1239,7 +1239,7 @@ void gfx_rt64_rapi_draw_frame(float frameWeight) {
 	}
 
 	// Calculate the interpolated frame.
-	RT64.lib.SetViewPerspective(RT64.view, viewMatrix, fovRadians, RT64.camera.nearDist, RT64.camera.farDist);
+	RT64.lib.SetViewPerspective(RT64.view, viewMatrix, fovRadians, RT64.camera.nearDist, RT64.camera.farDist, RT64.prevCameraValid);
 
 	// Interpolate the display lists.
 	auto displayListIt = RT64.displayLists.begin();
