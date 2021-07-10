@@ -1762,7 +1762,14 @@
             "name": "textures/segment2/segment2.13458.ia16"
         },
         {
-            "materialMod": null,
+            "materialMod": {
+                "lightGroupMaskBits": 0,
+                "selfLight": [
+                    1.0,
+                    1.0,
+                    1.0
+                ]
+            },
             "name": "textures/segment2/segment2.13C58.rgba16"
         },
         {
