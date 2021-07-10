@@ -781,8 +781,8 @@ void gfx_init_skybox() {
     }
 }
 
-void gfx_set_skybox(uint8_t skybox_id) {
-    gfx_rapi->set_skybox_texture(skybox.textures[skybox_id]);
+void gfx_set_skybox(uint8_t skybox_id, float diffuse_color[3]) {
+    gfx_rapi->set_skybox(skybox.textures[skybox_id], diffuse_color);
 }
 
 #endif

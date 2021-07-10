@@ -45,7 +45,7 @@ struct GfxRenderingAPI {
     void (*set_graph_node_mod)(void *graph_node_mod);
 #endif
 #ifdef GFX_SEPARATE_SKYBOX
-    void (*set_skybox_texture)(uint32_t texture_id);
+    void (*set_skybox)(uint32_t texture_id, float diffuse_color[3]);
 #endif
     void (*init)(void);
     void (*on_resize)(void);

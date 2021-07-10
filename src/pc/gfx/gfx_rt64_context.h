@@ -178,6 +178,7 @@ struct RT64Context {
 	ShaderProgram *shaderProgram;
 	bool background;
 	RT64_VECTOR3 fogColor;
+	RT64_VECTOR3 skyboxDiffuseMultiplier;
 	RT64_RECT scissorRect;
 	RT64_RECT viewportRect;
 	int16_t fogMul;

@@ -20,11 +20,16 @@ extern "C" {
 #define GEO_LAYOUT_MODS_FILENAME		FS_BASEDIR "/rt64/geo_layout_mods.json"
 #define TEXTURE_MODS_FILENAME			FS_BASEDIR "/rt64/texture_mods.json"
 
-RT64_VECTOR3 gfx_rt64_load_vector3(const json &jvector) {
-	float x = jvector[0];
-	float y = jvector[1];
-	float z = jvector[2];
-	return { x, y, z };
+RT64_VECTOR3 gfx_rt64_load_vector3(const json &jobject, const std::string &key, RT64_VECTOR3 def = { 0.0f, 0.0f, 0.0f }) {
+	auto it = jobject.find(key);
+	if (it != jobject.end()) {
+		const json &jvector = (*it);
+		if (jvector.size() == 3) {
+			return { jvector[0], jvector[1], jvector[2] };
+		}
+	}
+
+	return def;
 }
 
 json gfx_rt64_save_vector3(RT64_VECTOR3 v) {
@@ -67,10 +72,10 @@ json gfx_rt64_save_specular_map_mod(const std::string &specularTexName) {
 
 void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
 	// General parameters
-	light->position = gfx_rt64_load_vector3(jlight["position"]);
+	light->position = gfx_rt64_load_vector3(jlight, "position");
 	light->attenuationRadius = jlight["attenuationRadius"];
 	light->pointRadius = jlight["pointRadius"];
-	light->diffuseColor = gfx_rt64_load_vector3(jlight["diffuseColor"]);
+	light->diffuseColor = gfx_rt64_load_vector3(jlight, "diffuseColor");
 	light->shadowOffset = jlight["shadowOffset"];
 	light->attenuationExponent = jlight["attenuationExponent"];
 	light->flickerIntensity = jlight["flickerIntensity"];
@@ -85,9 +90,7 @@ void gfx_rt64_load_light(const json &jlight, RT64_LIGHT *light) {
 	}
 	
 	// New parameters
-	if (jlight.find("specularColor") != jlight.end()) {
-		light->specularColor = gfx_rt64_load_vector3(jlight["specularColor"]);
-	}
+	light->specularColor = gfx_rt64_load_vector3(jlight, "specularColor", light->specularColor);
 }
 
 json gfx_rt64_save_light(RT64_LIGHT *light) {
@@ -105,13 +108,15 @@ json gfx_rt64_save_light(RT64_LIGHT *light) {
 }
 
 void gfx_rt64_load_scene_description(const json &jscene, RT64_SCENE_DESC *sceneDesc) {
-	sceneDesc->ambientBaseColor = gfx_rt64_load_vector3(jscene["ambientBaseColor"]);
-	sceneDesc->ambientNoGIColor = gfx_rt64_load_vector3(jscene["ambientNoGIColor"]);
-	sceneDesc->eyeLightDiffuseColor = gfx_rt64_load_vector3(jscene["eyeLightDiffuseColor"]);
-	sceneDesc->eyeLightSpecularColor = gfx_rt64_load_vector3(jscene["eyeLightSpecularColor"]);
-	sceneDesc->skyHSLModifier = gfx_rt64_load_vector3(jscene["skyHSLModifier"]);
-	sceneDesc->giDiffuseStrength = jscene["giDiffuseStrength"];
-	sceneDesc->giSkyStrength = jscene["giSkyStrength"];
+	sceneDesc->ambientBaseColor = gfx_rt64_load_vector3(jscene, "ambientBaseColor");
+	sceneDesc->ambientNoGIColor = gfx_rt64_load_vector3(jscene, "ambientNoGIColor");
+	sceneDesc->eyeLightDiffuseColor = gfx_rt64_load_vector3(jscene, "eyeLightDiffuseColor");
+	sceneDesc->eyeLightSpecularColor = gfx_rt64_load_vector3(jscene, "eyeLightSpecularColor");
+	sceneDesc->skyDiffuseMultiplier = gfx_rt64_load_vector3(jscene, "skyDiffuseMultiplier", { 1.0f, 1.0f, 1.0f });
+	sceneDesc->skyHSLModifier = gfx_rt64_load_vector3(jscene, "skyHSLModifier");
+	sceneDesc->skyYawOffset = jscene.value("skyYawOffset", 0.0f);
+	sceneDesc->giDiffuseStrength = jscene.value("giDiffuseStrength", 0.7f);
+	sceneDesc->giSkyStrength = jscene.value("giSkyStrength", 0.35f);
 }
 
 json gfx_rt64_save_scene_description(RT64_SCENE_DESC *sceneDesc) {
@@ -120,7 +125,9 @@ json gfx_rt64_save_scene_description(RT64_SCENE_DESC *sceneDesc) {
 	jscene["ambientNoGIColor"] = gfx_rt64_save_vector3(sceneDesc->ambientNoGIColor);
 	jscene["eyeLightDiffuseColor"] = gfx_rt64_save_vector3(sceneDesc->eyeLightDiffuseColor);
 	jscene["eyeLightSpecularColor"] = gfx_rt64_save_vector3(sceneDesc->eyeLightSpecularColor);
+	jscene["skyDiffuseMultiplier"] = gfx_rt64_save_vector3(sceneDesc->skyDiffuseMultiplier);
 	jscene["skyHSLModifier"] = gfx_rt64_save_vector3(sceneDesc->skyHSLModifier);
+	jscene["skyYawOffset"] = sceneDesc->skyYawOffset;
 	jscene["giDiffuseStrength"] = sceneDesc->giDiffuseStrength;
 	jscene["giSkyStrength"] = sceneDesc->giSkyStrength;
 	return jscene;

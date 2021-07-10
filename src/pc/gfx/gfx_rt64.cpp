@@ -574,6 +574,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.fogColor.x = 0.0f;
 	RT64.fogColor.y = 0.0f;
 	RT64.fogColor.z = 0.0f;
+	RT64.skyboxDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
 	RT64.fogMul = RT64.fogOffset = 0;
 	RT64.pickTextureNextFrame = false;
 	RT64.pickTextureHighlight = false;
@@ -641,7 +642,9 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 			sceneDesc.ambientNoGIColor = { 0.10f, 0.15f, 0.20f };
 			sceneDesc.eyeLightDiffuseColor = { 0.1f, 0.1f, 0.1f };
 			sceneDesc.eyeLightSpecularColor = { 0.1f, 0.1f, 0.1f };
+			sceneDesc.skyDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
 			sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
+			sceneDesc.skyYawOffset = 0.0f;
 			sceneDesc.giDiffuseStrength = 0.7f;
 			sceneDesc.giSkyStrength = 0.35f;
 
@@ -1324,7 +1327,11 @@ static void gfx_rt64_rapi_end_frame(void) {
 
 		// Update the scene's description.
 		const auto &areaLighting = RT64.levelAreaLighting[levelIndex][areaIndex];
-		RT64.lib.SetSceneDescription(RT64.scene, areaLighting.sceneDesc);
+		RT64_SCENE_DESC sceneDescCopy = areaLighting.sceneDesc;
+		sceneDescCopy.skyDiffuseMultiplier.x *= RT64.skyboxDiffuseMultiplier.x;
+		sceneDescCopy.skyDiffuseMultiplier.y *= RT64.skyboxDiffuseMultiplier.y;
+		sceneDescCopy.skyDiffuseMultiplier.z *= RT64.skyboxDiffuseMultiplier.z;
+		RT64.lib.SetSceneDescription(RT64.scene, sceneDescCopy);
 
 		// Build lights array out of the static level lights and the dynamic lights.
 		int areaLightCount = areaLighting.lightCount;
@@ -1662,7 +1669,8 @@ static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
 	RT64.graphNodeMod = (RecordedMod *)(graph_node_mod);
 }
 
-static void gfx_rt64_rapi_set_skybox_texture(uint32_t texture_id) {
+static void gfx_rt64_rapi_set_skybox(uint32_t texture_id, float diffuse_color[3]) {
+	RT64.skyboxDiffuseMultiplier = { diffuse_color[0], diffuse_color[1], diffuse_color[2] };
 	RT64.lib.SetViewSkyPlane(RT64.view, RT64.textures[texture_id].texture);
 }
 
@@ -1716,7 +1724,7 @@ struct GfxRenderingAPI gfx_rt64_rapi = {
 	gfx_rt64_rapi_draw_triangles_ortho,
     gfx_rt64_rapi_draw_triangles_persp,
 	gfx_rt64_rapi_set_graph_node_mod,
-	gfx_rt64_rapi_set_skybox_texture,
+	gfx_rt64_rapi_set_skybox,
     gfx_rt64_rapi_init,
 	gfx_rt64_rapi_on_resize,
     gfx_rt64_rapi_start_frame,
