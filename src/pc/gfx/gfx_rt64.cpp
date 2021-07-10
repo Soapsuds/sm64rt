@@ -822,6 +822,8 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 		auto &dynMesh = displayList.meshes[displayList.newCount];
 		uint64_t prevHash = dynMesh.prevVertexBufferHash;
 		if (hash != prevHash) {
+			dynMesh.staticFrames = 0;
+
 			// We can only reuse the mesh and interpolate if the vertex formats are compatible.
 			if (
 				interpolate &&
@@ -853,8 +855,21 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 				return dynMesh.mesh;
 			}
 		}
+		// If the hash hasn't changed at all, search for it in the static mesh cache instead.
+		// If it's not on the cache, increase the frame counter to mark it for caching if possible.
 		else {
-			return dynMesh.mesh;
+			auto staticMeshIt = RT64.staticMeshCache.find(dynMesh.prevVertexBufferHash);
+			if (staticMeshIt != RT64.staticMeshCache.end()) {
+				dynMesh.staticFrames = 0;
+				return staticMeshIt->second;
+			}
+			else {
+				if (raytrace) {
+					dynMesh.staticFrames++;
+				}
+				
+				return dynMesh.mesh;
+			}
 		}
 	}
 
@@ -889,10 +904,17 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 	dynMesh.newVertexBufferHash = 0;
 	dynMesh.newVertexBufferValid = false;
 	dynMesh.deltaVertexBuffer = nullptr;
+	dynMesh.staticFrames = 0;
 	RT64.lib.SetMesh(dynMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
 	memcpy(dynMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
 
 	return dynMesh.mesh;
+}
+
+static void gfx_rt64_rapi_cache_static_rt_mesh(uint64_t key, const RecordedMesh &dynMesh) {
+	RT64_MESH *mesh = RT64.lib.CreateMesh(RT64.device, RT64_MESH_RAYTRACE_ENABLED);
+	RT64.lib.SetMesh(mesh, dynMesh.prevVertexBuffer, dynMesh.vertexCount, dynMesh.vertexStride, RT64.indexTriangleList, dynMesh.indexCount);
+	RT64.staticMeshCache[key] = mesh;
 }
 
 static void gfx_rt64_add_light(RT64_LIGHT *lightMod, RT64_MATRIX4 prevTransform, RT64_MATRIX4 newTransform) {
@@ -1455,7 +1477,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 	// Print debugging messages.
 	if (RT64.inspector != nullptr) {
 		char statsMessage[256] = "";
-    	sprintf(statsMessage, "RT %d Raster %d Lights %d", rtInstanceCount, rasterInstanceCount, RT64.lightCount);
+    	sprintf(statsMessage, "RT %d Raster %d Lights %d Cached %d", rtInstanceCount, rasterInstanceCount, RT64.lightCount, RT64.staticMeshCache.size());
     	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
 	}
 
@@ -1513,6 +1535,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 	}
 
 	// Display list cleanup.
+	int maxCaches = CACHED_MESH_MAX_PER_FRAME;
 	dlIt = RT64.displayLists.begin();
 	while (dlIt != RT64.displayLists.end()) {
 		auto &dl = dlIt->second;
@@ -1529,6 +1552,16 @@ static void gfx_rt64_rapi_end_frame(void) {
 		// Move attributes from new to prev for meshes.
 		for (auto &dynMesh : dl.meshes) {
 			if (!dynMesh.newVertexBufferValid) {
+				if (
+					(maxCaches > 0) && 
+					(dynMesh.staticFrames >= CACHED_MESH_REQUIRED_FRAMES) && 
+					(RT64.staticMeshCache.find(dynMesh.prevVertexBufferHash) == RT64.staticMeshCache.end())
+				) 
+				{
+					gfx_rt64_rapi_cache_static_rt_mesh(dynMesh.prevVertexBufferHash, dynMesh);
+					maxCaches--;
+				}
+
 				continue;
 			}
 

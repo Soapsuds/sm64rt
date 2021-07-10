@@ -18,7 +18,7 @@
 #include <Windows.h>
 
 #define MAX_GEO_LAYOUT_STACK_SIZE		32
-#define CACHED_MESH_REQUIRED_FRAMES		3
+#define CACHED_MESH_REQUIRED_FRAMES		5
 #define CACHED_MESH_MAX_PER_FRAME		1
 #define MAX_LIGHTS						512
 #define MAX_LEVEL_LIGHTS				128
@@ -44,6 +44,7 @@ struct RecordedMesh {
     uint32_t vertexCount = 0;
 	uint32_t vertexStride = 0;
     uint32_t indexCount = 0;
+	uint32_t staticFrames = 0;
 	bool useTexture = false;
     bool raytrace = false;
 };
@@ -147,11 +148,10 @@ struct RT64Context {
 	RT64_SCENE *scene = nullptr;
 	RT64_VIEW *view = nullptr;
 	std::unordered_map<uint32_t, RecordedTexture> textures;
-	std::unordered_map<uint64_t, RecordedMesh> staticMeshes;
-	std::unordered_map<uint64_t, RecordedMesh> dynamicMeshes;
 	std::unordered_map<uint32_t, ShaderProgram *> shaderPrograms;
 	std::unordered_map<uint32_t, RecordedDisplayList> displayLists;
 	std::unordered_map<void *, RecordedMod *> graphNodeMods;
+	std::unordered_map<uint64_t, RT64_MESH *> staticMeshCache;
 	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
 	RT64_LIGHT lights[MAX_LIGHTS];
     unsigned int lightCount;
