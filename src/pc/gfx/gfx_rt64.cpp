@@ -1553,6 +1553,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 		// Move attributes from new to prev for meshes.
 		for (auto &dynMesh : dl.meshes) {
 			if (!dynMesh.newVertexBufferValid) {
+#if STATIC_CACHE_ENABLED == 1
 				if (
 					(maxCaches > 0) && 
 					(dynMesh.staticFrames >= CACHED_MESH_REQUIRED_FRAMES) && 
@@ -1562,7 +1563,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 					gfx_rt64_rapi_cache_static_rt_mesh(dynMesh.prevVertexBufferHash, dynMesh);
 					maxCaches--;
 				}
-
+#endif
 				continue;
 			}
 
