@@ -336,6 +336,7 @@ void gfx_rt64_apply_config() {
 	desc.giBounces = configRT64GI ? 1 : 0;
 	desc.denoiserEnabled = configRT64Denoiser;
 	desc.motionBlurStrength = configRT64MotionBlurStrength / 100.0f;
+	desc.dlssMode = configRT64DlssMode;
 	RT64.useVsync = configWindow.vsync;
 	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);
@@ -1707,6 +1708,10 @@ static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
 static void gfx_rt64_rapi_set_skybox(uint32_t texture_id, float diffuse_color[3]) {
 	RT64.skyboxDiffuseMultiplier = { diffuse_color[0], diffuse_color[1], diffuse_color[2] };
 	RT64.lib.SetViewSkyPlane(RT64.view, RT64.textures[texture_id].texture);
+}
+
+extern "C" bool gfx_rt64_dlss_supported() {
+	return RT64.lib.GetViewFeatureSupport(RT64.view, RT64_FEATURE_DLSS);
 }
 
 extern "C" void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {

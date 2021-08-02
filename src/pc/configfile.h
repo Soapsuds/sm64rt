@@ -66,6 +66,7 @@ extern unsigned int configRT64MaxLights;
 extern unsigned int configRT64MotionBlurStrength;
 extern bool         configRT64SphereLights;
 extern bool         configRT64GI;
+extern unsigned int configRT64DlssMode;
 extern bool         configRT64Denoiser;
 #endif
 

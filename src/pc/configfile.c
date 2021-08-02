@@ -100,6 +100,7 @@ unsigned int configRT64MaxLights = 6;
 unsigned int configRT64MotionBlurStrength = 0;
 bool         configRT64SphereLights = false;
 bool         configRT64GI = false;
+unsigned int configRT64DlssMode = 1;
 bool         configRT64Denoiser = false;
 #endif
 
@@ -156,6 +157,7 @@ static const struct ConfigOption options[] = {
     {.name = "rt64_max_lights",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
     {.name = "rt64_sphere_lights",             .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
     {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
+    {.name = "rt64_dlss_mode",                 .type = CONFIG_TYPE_UINT, .uintValue = &configRT64DlssMode},
     {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
     {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},
     #endif
