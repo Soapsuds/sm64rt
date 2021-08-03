@@ -50,6 +50,15 @@ struct RecordedMesh {
     bool raytrace = false;
 };
 
+struct DynamicMesh {
+    RT64_MESH *mesh = nullptr;
+    uint32_t vertexCount = 0;
+	uint32_t vertexStride = 0;
+    uint32_t indexCount = 0;
+    bool raytrace = false;
+	bool inUse = false;
+};
+
 struct RecordedInstance {
 	RT64_INSTANCE *instance;
 	RT64_INSTANCE_DESC desc;
@@ -153,6 +162,7 @@ struct RT64Context {
 	std::unordered_map<uint32_t, RecordedDisplayList> displayLists;
 	std::unordered_map<void *, RecordedMod *> graphNodeMods;
 	std::unordered_map<uint64_t, RT64_MESH *> staticMeshCache;
+	std::unordered_map<uint64_t, DynamicMesh> dynamicMeshPool;
 	unsigned int indexTriangleList[GFX_MAX_BUFFERED];
 	RT64_LIGHT lights[MAX_LIGHTS];
     unsigned int lightCount;

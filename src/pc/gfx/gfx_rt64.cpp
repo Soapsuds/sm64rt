@@ -875,42 +875,91 @@ static RT64_MESH *gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len
 		}
 	}
 
-	// Make the vector large enough to fit the required meshes.
-	if (displayList.meshes.size() < (displayList.newCount + 1)) {
-		displayList.meshes.resize(displayList.newCount + 1);
-	}
+	// Store the mesh in the display list.
+	if (interpolate) {
+		// Make the vector large enough to fit the required meshes.
+		if (displayList.meshes.size() < (displayList.newCount + 1)) {
+			displayList.meshes.resize(displayList.newCount + 1);
+		}
 
-	// Destroy any previous pointers if they exist.
-	auto &dynMesh = displayList.meshes[displayList.newCount];
-	if (dynMesh.mesh != nullptr) {
-		free(dynMesh.prevVertexBuffer);
-		free(dynMesh.newVertexBuffer);
-		free(dynMesh.deltaVertexBuffer);
-		RT64.lib.DestroyMesh(dynMesh.mesh);
-		dynMesh.prevVertexBuffer = nullptr;
+		// Destroy any previous pointers if they exist.
+		auto &dynMesh = displayList.meshes[displayList.newCount];
+		if (dynMesh.mesh != nullptr) {
+			free(dynMesh.prevVertexBuffer);
+			free(dynMesh.newVertexBuffer);
+			free(dynMesh.deltaVertexBuffer);
+			RT64.lib.DestroyMesh(dynMesh.mesh);
+			dynMesh.prevVertexBuffer = nullptr;
+			dynMesh.newVertexBuffer = nullptr;
+			dynMesh.deltaVertexBuffer = nullptr;
+			dynMesh.mesh = nullptr;
+		}
+
+		// Create the mesh.
+		dynMesh.mesh = RT64.lib.CreateMesh(RT64.device, raytrace ? (RT64_MESH_RAYTRACE_ENABLED | RT64_MESH_RAYTRACE_UPDATABLE) : 0);
+		dynMesh.vertexCount = vertexCount;
+		dynMesh.vertexStride = vertexStride;
+		dynMesh.indexCount = indexCount;
+		dynMesh.useTexture = useTexture;
+		dynMesh.raytrace = raytrace;
+		dynMesh.prevVertexBuffer = (float *)(malloc(vertexBufferSize));
+		dynMesh.prevVertexBufferHash = hash;
 		dynMesh.newVertexBuffer = nullptr;
+		dynMesh.newVertexBufferHash = 0;
+		dynMesh.newVertexBufferValid = false;
 		dynMesh.deltaVertexBuffer = nullptr;
-		dynMesh.mesh = nullptr;
+		dynMesh.staticFrames = 0;
+		RT64.lib.SetMesh(dynMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
+		memcpy(dynMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
+
+		return dynMesh.mesh;
 	}
+	// Look for the mesh in a dynamic pool of meshes.
+	else {
+		// Search for a dynamic mesh that has the same hash.
+		auto dynamicMeshIt = RT64.dynamicMeshPool.find(hash);
+		if (dynamicMeshIt != RT64.dynamicMeshPool.end()) {
+			dynamicMeshIt->second.inUse = true;
+			return dynamicMeshIt->second.mesh;
+		}
 
-	// Create the mesh.
-	dynMesh.mesh = RT64.lib.CreateMesh(RT64.device, raytrace ? (RT64_MESH_RAYTRACE_ENABLED | RT64_MESH_RAYTRACE_UPDATABLE) : 0);
-	dynMesh.vertexCount = vertexCount;
-	dynMesh.vertexStride = vertexStride;
-	dynMesh.indexCount = indexCount;
-	dynMesh.useTexture = useTexture;
-	dynMesh.raytrace = raytrace;
-	dynMesh.prevVertexBuffer = (float *)(malloc(vertexBufferSize));
-	dynMesh.prevVertexBufferHash = hash;
-	dynMesh.newVertexBuffer = nullptr;
-	dynMesh.newVertexBufferHash = 0;
-	dynMesh.newVertexBufferValid = false;
-	dynMesh.deltaVertexBuffer = nullptr;
-	dynMesh.staticFrames = 0;
-	RT64.lib.SetMesh(dynMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
-	memcpy(dynMesh.prevVertexBuffer, vertexBuffer, vertexBufferSize);
+		// Search linearly for a compatible dynamic mesh.
+		uint64_t foundHash = 0;
+		for (auto dynamicMeshIt : RT64.dynamicMeshPool) {
+			if (
+				!dynamicMeshIt.second.inUse &&
+				(dynamicMeshIt.second.vertexCount == vertexCount) && 
+				(dynamicMeshIt.second.vertexStride == vertexStride) && 
+				(dynamicMeshIt.second.indexCount == indexCount) && 
+				(dynamicMeshIt.second.raytrace == raytrace)
+			) 
+			{
+				foundHash = dynamicMeshIt.first;
+				break;
+			}
+		}
 
-	return dynMesh.mesh;
+		// If we found a valid hash, change the hash where the mesh is stored.
+		if (foundHash != 0) {
+			RT64.dynamicMeshPool[hash] = RT64.dynamicMeshPool[foundHash];
+			RT64.dynamicMeshPool.erase(foundHash);
+		}
+
+		auto &dynamicMesh = RT64.dynamicMeshPool[hash];
+
+		// Create the mesh if it hasn't been created yet.
+		if (dynamicMesh.mesh == nullptr) {
+			dynamicMesh.mesh = RT64.lib.CreateMesh(RT64.device, raytrace ? (RT64_MESH_RAYTRACE_ENABLED | RT64_MESH_RAYTRACE_UPDATABLE) : 0);
+			dynamicMesh.vertexCount = vertexCount;
+			dynamicMesh.vertexStride = vertexStride;
+			dynamicMesh.indexCount = indexCount;
+			dynamicMesh.raytrace = raytrace;
+		}
+
+		dynamicMesh.inUse = true;
+		RT64.lib.SetMesh(dynamicMesh.mesh, vertexBuffer, vertexCount, vertexStride, RT64.indexTriangleList, indexCount);
+		return dynamicMesh.mesh;
+	}
 }
 
 static void gfx_rt64_rapi_cache_static_rt_mesh(uint64_t key, const RecordedMesh &dynMesh) {
@@ -1479,7 +1528,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 	// Print debugging messages.
 	if (RT64.inspector != nullptr) {
 		char statsMessage[256] = "";
-    	sprintf(statsMessage, "RT %d Raster %d Lights %d Cached %d", rtInstanceCount, rasterInstanceCount, RT64.lightCount, RT64.staticMeshCache.size());
+    	sprintf(statsMessage, "RT %d Raster %d Lights %d Cached %d DynPoolSz %d", rtInstanceCount, rasterInstanceCount, RT64.lightCount, RT64.staticMeshCache.size(), RT64.dynamicMeshPool.size());
     	RT64.lib.PrintMessageInspector(RT64.inspector, statsMessage);
 	}
 
@@ -1590,6 +1639,19 @@ static void gfx_rt64_rapi_end_frame(void) {
 		}
 
 		dlIt++;
+	}
+
+	// Dynamic mesh pool cleanup.
+	auto dynamicMeshIt = RT64.dynamicMeshPool.begin();
+	while (dynamicMeshIt != RT64.dynamicMeshPool.end()) {
+		if (dynamicMeshIt->second.inUse) {
+			dynamicMeshIt->second.inUse = false;
+			dynamicMeshIt++;
+        }
+		else {
+			RT64.lib.DestroyMesh(dynamicMeshIt->second.mesh);
+			dynamicMeshIt = RT64.dynamicMeshPool.erase(dynamicMeshIt);
+		}
 	}
 
 	// Camera interpolation reset.
