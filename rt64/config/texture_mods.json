@@ -206,7 +206,7 @@
                     0.0,
                     1.0
                 ],
-                "reflectionFactor": 0.9,
+                "reflectionFactor": 0.8999999761581421,
                 "reflectionShineFactor": 1.0
             },
             "name": "actors/mario/mario_metal.rgba16"
@@ -219,7 +219,7 @@
                     0.0,
                     1.0
                 ],
-                "reflectionFactor": 0.9,
+                "reflectionFactor": 0.8999999761581421,
                 "reflectionShineFactor": 1.0
             },
             "name": "actors/mario/mario_metal_new.rgba32"
