@@ -755,20 +755,26 @@ static bool preload_texture(void *user, const char *path) {
 #ifdef GFX_SEPARATE_SKYBOX
 
 #define MAX_SKYBOX_COUNT 10
+#define MAX_SKYBOX_EXTENSIONS 2
 
 #define SKYBOX_DIR FS_TEXTUREDIR "/textures/skyboxes/"
 
-const char *skybox_paths[MAX_SKYBOX_COUNT] = {
-    SKYBOX_DIR "water.png",
-    SKYBOX_DIR "bitfs.png",
-    SKYBOX_DIR "wdw.png",
-    SKYBOX_DIR "cloud_floor.png",
-    SKYBOX_DIR "ccm.png",
-    SKYBOX_DIR "ssl.png",
-    SKYBOX_DIR "bbh.png",
-    SKYBOX_DIR "bidw.png",
-    SKYBOX_DIR "clouds.png",
-    SKYBOX_DIR "bits.png"
+const char *skybox_base_paths[MAX_SKYBOX_COUNT] = {
+    SKYBOX_DIR "water",
+    SKYBOX_DIR "bitfs",
+    SKYBOX_DIR "wdw",
+    SKYBOX_DIR "cloud_floor",
+    SKYBOX_DIR "ccm",
+    SKYBOX_DIR "ssl",
+    SKYBOX_DIR "bbh",
+    SKYBOX_DIR "bidw",
+    SKYBOX_DIR "clouds",
+    SKYBOX_DIR "bits"
+};
+
+const char *skybox_extensions[MAX_SKYBOX_EXTENSIONS] = {
+    "dds",
+    "png"
 };
 
 struct {
@@ -776,10 +782,19 @@ struct {
 } skybox;
 
 void gfx_preload_skybox(uint8_t skybox_id) {
-    const char *skyboxPath = skybox_paths[skybox_id];
-    skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxPath);
+    const char *skyboxBasePath = skybox_base_paths[skybox_id];
+    skybox.textures[skybox_id] = gfx_rapi->new_texture(skyboxBasePath);
     gfx_rapi->select_texture(0, skybox.textures[skybox_id]);
-    load_texture(skyboxPath);
+
+    // Search for the different file extensions the skybox texture could have.
+    char skyboxPath[64];
+    for (int e = 0; e < MAX_SKYBOX_EXTENSIONS; e++) {
+        snprintf(skyboxPath, 64, "%s.%s", skyboxBasePath, skybox_extensions[e]);
+        if (fs_is_file(skyboxPath)) {
+            load_texture(skyboxPath);
+            break;
+        }
+    }
 }
 
 void gfx_init_skybox() {
