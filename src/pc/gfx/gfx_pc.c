@@ -662,6 +662,7 @@ static inline void load_texture(const char *fullpath) {
 
     u8 *imgdata = fs_load_file(fullpath, &imgsize);
     if (imgdata) {
+#ifndef GFX_UPLOAD_TEXTURE_FILE
         // TODO: implement stbi_callbacks or some shit instead of loading the whole texture
         u8 *data = stbi_load_from_memory(imgdata, imgsize, &w, &h, NULL, 4);
         free(imgdata);
@@ -670,11 +671,18 @@ static inline void load_texture(const char *fullpath) {
             stbi_image_free(data); // don't need this anymore
             return;
         }
+#else
+        gfx_rapi->upload_texture(fullpath, imgdata, imgsize);
+        free(imgdata);
+        return;
+#endif
     }
 
+#ifndef GFX_UPLOAD_TEXTURE_FILE
     fprintf(stderr, "could not load texture: `%s`\n", fullpath);
     // replace with missing texture
     gfx_rapi->upload_texture(missing_texture, MISSING_W, MISSING_H);
+#endif
 }
 
 

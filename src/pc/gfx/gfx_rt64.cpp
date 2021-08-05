@@ -19,6 +19,7 @@ extern "C" {
 #include <cassert>
 #include <stdint.h>
 
+#include <stb/stb_image.h>
 #include "xxhash/xxhash64.h"
 
 #include "gfx_rt64.h"
@@ -590,10 +591,19 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	}
 
 	// Preload a blank texture.
-	int blankBytesCount = 256 * 256 * 4;
+	const int BlankTextureSize = 64;
+	int blankBytesCount = BlankTextureSize * BlankTextureSize * 4;
 	unsigned char *blankBytes = (unsigned char *)(malloc(blankBytesCount));
 	memset(blankBytes, 0xFF, blankBytesCount);
-	RT64.blankTexture = RT64.lib.CreateTextureFromRGBA8(RT64.device, blankBytes, 256, 256, 4);
+
+	RT64_TEXTURE_DESC texDesc;
+	texDesc.bytes = blankBytes;
+	texDesc.byteCount = blankBytesCount;
+	texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+	texDesc.width = BlankTextureSize;
+	texDesc.height = BlankTextureSize;
+	texDesc.rowPitch = texDesc.width * 4;
+	RT64.blankTexture = RT64.lib.CreateTexture(RT64.device, texDesc);
 	free(blankBytes);
 
 	// Build identity matrix.
@@ -760,10 +770,34 @@ static void gfx_rt64_rapi_select_texture(int tile, uint32_t texture_id) {
     RT64.currentTextureIds[tile] = texture_id;
 }
 
-static void gfx_rt64_rapi_upload_texture(const uint8_t *rgba32_buf, int width, int height) {
-	RT64_TEXTURE *texture = RT64.lib.CreateTextureFromRGBA8(RT64.device, rgba32_buf, width, height, 4);
+static void gfx_rt64_rapi_upload_texture(const char *file_path, const uint8_t *file_buf, uint64_t file_buf_size) {
 	uint32_t textureKey = RT64.currentTextureIds[RT64.currentTile];
-	RT64.textures[textureKey].texture = texture;
+
+	// Use special case for loading DDS directly.
+	if (strstr(file_path, ".dds") || strstr(file_path, ".DDS")) {
+		RT64_TEXTURE_DESC texDesc;
+		texDesc.bytes = file_buf;
+		texDesc.byteCount = (int)(file_buf_size);
+		texDesc.width =  texDesc.height = texDesc.rowPitch = -1;
+		texDesc.format = RT64_TEXTURE_FORMAT_DDS;
+		RT64.textures[textureKey].texture = RT64.lib.CreateTexture(RT64.device, texDesc);
+	}
+	// Use stb image to load the file from memory instead if possible.
+	else {
+		int width, height;
+		stbi_uc *data = stbi_load_from_memory(file_buf, file_buf_size, &width, &height, NULL, 4);
+        if (data != nullptr) {
+			RT64_TEXTURE_DESC texDesc;
+			texDesc.bytes = data;
+			texDesc.width = width;
+			texDesc.height = height;
+			texDesc.rowPitch = texDesc.width * 4;
+			texDesc.byteCount = texDesc.height * texDesc.rowPitch;
+			texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+			RT64.textures[textureKey].texture = RT64.lib.CreateTexture(RT64.device, texDesc);
+            stbi_image_free(data);
+		}
+	}
 }
 
 static void gfx_rt64_rapi_set_sampler_parameters(int tile, bool linear_filter, uint32_t cms, uint32_t cmt) {
