@@ -771,6 +771,7 @@ static void gfx_rt64_rapi_select_texture(int tile, uint32_t texture_id) {
 }
 
 static void gfx_rt64_rapi_upload_texture(const char *file_path, const uint8_t *file_buf, uint64_t file_buf_size) {
+	RT64_TEXTURE *texture = nullptr;
 	uint32_t textureKey = RT64.currentTextureIds[RT64.currentTile];
 
 	// Use special case for loading DDS directly.
@@ -780,7 +781,7 @@ static void gfx_rt64_rapi_upload_texture(const char *file_path, const uint8_t *f
 		texDesc.byteCount = (int)(file_buf_size);
 		texDesc.width =  texDesc.height = texDesc.rowPitch = -1;
 		texDesc.format = RT64_TEXTURE_FORMAT_DDS;
-		RT64.textures[textureKey].texture = RT64.lib.CreateTexture(RT64.device, texDesc);
+		texture = RT64.lib.CreateTexture(RT64.device, texDesc);
 	}
 	// Use stb image to load the file from memory instead if possible.
 	else {
@@ -794,9 +795,19 @@ static void gfx_rt64_rapi_upload_texture(const char *file_path, const uint8_t *f
 			texDesc.rowPitch = texDesc.width * 4;
 			texDesc.byteCount = texDesc.height * texDesc.rowPitch;
 			texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
-			RT64.textures[textureKey].texture = RT64.lib.CreateTexture(RT64.device, texDesc);
+			texture = RT64.lib.CreateTexture(RT64.device, texDesc);
             stbi_image_free(data);
 		}
+		else {
+			fprintf(stderr, "stb_image was unable to load the texture file.\n");
+		}
+	}
+
+	if (texture != nullptr) {
+		RT64.textures[textureKey].texture = texture;
+	}
+	else {
+		fprintf(stderr, "gfx_rt64_rapi_upload_texture(%s, %p, %llu) failed.\n", file_path, file_buf, file_buf_size);
 	}
 }
 
