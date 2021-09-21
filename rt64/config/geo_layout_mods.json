@@ -636,8 +636,37 @@
             "name": "red_flame_geo"
         },
         {
+            "lightMod": {
+                "attenuationExponent": 2.0,
+                "attenuationRadius": 300.0,
+                "diffuseColor": [
+                    0.800000011920929,
+                    0.20000000298023224,
+                    0.0
+                ],
+                "flickerIntensity": 0.07500000298023224,
+                "groupBits": 64,
+                "pointRadius": 25.0,
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "shadowOffset": 25.0,
+                "specularColor": [
+                    0.5199999809265137,
+                    0.12999999523162842,
+                    0.0
+                ]
+            },
             "materialMod": {
-                "ignoreNormalFactor": 1.0
+                "ignoreNormalFactor": 1.0,
+                "lightGroupMaskBits": 0,
+                "selfLight": [
+                    0.699999988079071,
+                    0.699999988079071,
+                    0.699999988079071
+                ]
             },
             "name": "red_flame_shadow_geo"
         },
