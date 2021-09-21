@@ -2,18 +2,18 @@
 
 Fork of [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) that adds support for [RT64](https://github.com/DarioSamo/RT64), a hardware-accelerated real-time path tracer.
 
-## Technical Preview
+## Alpha Phase
 
-**At the moment, this mod is a technical preview and should only be used by those willing to tolerate problems such as visual glitches and performance problems**. This project is subject to have major changes in the future in anything from its architecture, design, aesthetic and performance. Any help towards solving these issues is welcome.
+**At the moment, this mod is currently in its alpha phase and should only be used by those willing to tolerate problems such as visual glitches and performance problems**. This project is subject to have major changes in the future in anything from its architecture, design, aesthetic and performance. Any help towards solving these issues is welcome.
 
 Please do not report issues that don't provide new information. Remember to check if your problem has already been reported on the [issue tracker](https://github.com/DarioSamo/sm64rt/issues).
 
-Performance is the first thing that will be worked on and it has plenty of room for optimization at the moment. If you cannot reach the target framerate, it's recommended to lower the resolution with the internal scaler, as it has the biggest impact in performance out of all the options.
+Performance is highly dependent on the target resolution and it still has plenty of room for improvement. Using upscalers like NVIDIA DLSS will help significantly in achieving higher framerates. If you cannot reach the target framerate, it's recommended to lower the resolution with the internal scaler or select a lower quality DLSS preset, as it has the biggest impact in performance out of all the options.
 
 ## Requirements
 * Windows 10 (2004 or newer)
 * [Microsoft Visual C++ Redistributable for Visual Studio 2019](https://aka.ms/vs/16/release/vc_redist.x64.exe)
-* GPU with DXR support (NVIDIA Drivers version 465 or newer **required** for OptiX denoiser support)
+* GPU with DXR support (NVIDIA Drivers version 470 or newer **required** for DLSS support)
   - Unsure if you can run the mod? [Download and run the RT64 sample instead!](https://github.com/DarioSamo/RT64/releases/download/test-sample-v1/rt64sample-v1.zip)
 
 ## Features
@@ -25,6 +25,7 @@ Performance is the first thing that will be worked on and it has plenty of room 
 * Normal map support.
 * Real-time raytraced shadows, reflections, refractions and global illumination.
 * Real-time denoiser (experimental).
+* NVIDIA DLSS (Deep Learning Super Sampling).
 
 ## Building
 For building instructions, please refer to the [sm64ex wiki](https://github.com/sm64pc/sm64ex/wiki) and follow the process as normal with these additional build flags:
@@ -32,8 +33,6 @@ For building instructions, please refer to the [sm64ex wiki](https://github.com/
 * RENDER_API=RT64 (Required to use RT64 as the renderer)
 
 * EXTERNAL_DATA=1 (Required for associating textures to the renderer's material properties)
-
-* NODRAWINGDISTANCE=1 (Optional, but gives good results and prevents pop-in, which can cause issues with objects that cast shadows or appear in reflections)
 
 The repository already comes with a prebuilt binary and the compatible header file for RT64 to make the build process easier. If you wish to build this module yourself, you can do it from the [RT64 repository](https://github.com/DarioSamo/RT64) instead.
 
