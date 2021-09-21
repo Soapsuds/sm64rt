@@ -25,6 +25,7 @@ Performance is highly dependent on the target resolution and it still has plenty
 * Normal map support.
 * Real-time raytraced shadows, reflections, refractions and global illumination.
 * Real-time denoiser (experimental).
+* NVIDIA DLSS (Deep Learning Super Sampling).
 
 ## Building
 For building instructions, please refer to the [sm64ex wiki](https://github.com/sm64pc/sm64ex/wiki) and follow the process as normal with these additional build flags:
