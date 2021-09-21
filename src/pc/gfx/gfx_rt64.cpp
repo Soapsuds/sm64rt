@@ -332,9 +332,9 @@ static void gfx_rt64_toggle_full_screen(bool enable) {
 void gfx_rt64_apply_config() {
 	RT64_VIEW_DESC desc;
 	desc.resolutionScale = configRT64ResScale / 100.0f;
-	desc.maxLightSamples = configRT64MaxLights;
-	desc.softLightSamples = configRT64SphereLights ? 1 : 0;
-	desc.giBounces = configRT64GI ? 1 : 0;
+	desc.maxLights = configRT64MaxLights;
+	desc.diSamples = configRT64SphereLights ? 1 : 0;
+	desc.giSamples = configRT64GI ? 1 : 0;
 	desc.denoiserEnabled = configRT64Denoiser;
 	desc.motionBlurStrength = configRT64MotionBlurStrength / 100.0f;
 	desc.dlssMode = configRT64DlssMode;

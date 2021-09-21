@@ -168,9 +168,9 @@ typedef struct {
 typedef struct {
 	float resolutionScale;
 	float motionBlurStrength;
-	unsigned int maxLightSamples;
-	unsigned int softLightSamples;
-	unsigned int giBounces;
+	unsigned int diSamples;
+	unsigned int giSamples;
+	unsigned int maxLights;
 	unsigned char dlssMode;
 	bool denoiserEnabled;
 } RT64_VIEW_DESC;
