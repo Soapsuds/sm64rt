@@ -342,10 +342,6 @@ void gfx_rt64_apply_config() {
 	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);
 
-	if (!configRT64StaticMeshCache && !RT64.staticMeshCache.empty()) {
-		RT64.staticMeshCache.clear();
-	}
-
 	// Adapted from gfx_dxgi.cpp
 	if (configWindow.fullscreen != RT64.isFullScreen) {
         gfx_rt64_toggle_full_screen(configWindow.fullscreen);
