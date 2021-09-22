@@ -342,6 +342,10 @@ void gfx_rt64_apply_config() {
 	RT64.targetFPS = configRT64TargetFPS;
 	RT64.lib.SetViewDescription(RT64.view, desc);
 
+	if (!configRT64StaticMeshCache && !RT64.staticMeshCache.empty()) {
+		RT64.staticMeshCache.clear();
+	}
+
 	// Adapted from gfx_dxgi.cpp
 	if (configWindow.fullscreen != RT64.isFullScreen) {
         gfx_rt64_toggle_full_screen(configWindow.fullscreen);
@@ -1648,8 +1652,8 @@ static void gfx_rt64_rapi_end_frame(void) {
 		// Move attributes from new to prev for meshes.
 		for (auto &dynMesh : dl.meshes) {
 			if (!dynMesh.newVertexBufferValid) {
-#if STATIC_CACHE_ENABLED == 1
 				if (
+					configRT64StaticMeshCache &&
 					(maxCaches > 0) && 
 					(dynMesh.staticFrames >= CACHED_MESH_REQUIRED_FRAMES) && 
 					(RT64.staticMeshCache.find(dynMesh.prevVertexBufferHash) == RT64.staticMeshCache.end())
@@ -1658,7 +1662,7 @@ static void gfx_rt64_rapi_end_frame(void) {
 					gfx_rt64_rapi_cache_static_rt_mesh(dynMesh.prevVertexBufferHash, dynMesh);
 					maxCaches--;
 				}
-#endif
+
 				continue;
 			}
 
