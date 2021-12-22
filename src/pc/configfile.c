@@ -102,6 +102,7 @@ bool         configRT64SphereLights = false;
 bool         configRT64GI = false;
 unsigned int configRT64DlssMode = 1;
 bool         configRT64Denoiser = false;
+bool         configRT64StaticMeshCache = true;
 #endif
 
 static const struct ConfigOption options[] = {
@@ -159,6 +160,7 @@ static const struct ConfigOption options[] = {
     {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
     {.name = "rt64_dlss_mode",                 .type = CONFIG_TYPE_UINT, .uintValue = &configRT64DlssMode},
     {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
+    {.name = "rt64_static_mesh_cache",         .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64StaticMeshCache},
     {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},
     #endif
 };

@@ -68,6 +68,7 @@ extern bool         configRT64SphereLights;
 extern bool         configRT64GI;
 extern unsigned int configRT64DlssMode;
 extern bool         configRT64Denoiser;
+extern bool         configRT64StaticMeshCache;
 #endif
 
 void configfile_load(const char *filename);
