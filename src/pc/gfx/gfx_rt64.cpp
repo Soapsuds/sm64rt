@@ -95,10 +95,18 @@ static void gfx_matrix_mul(float res[4][4], const float a[4][4], const float b[4
     memcpy(res, tmp, sizeof(tmp));
 }
 
-void elapsed_time(const LARGE_INTEGER &start, const LARGE_INTEGER &end, const LARGE_INTEGER &frequency, LARGE_INTEGER &elapsed) {
-	elapsed.QuadPart = end.QuadPart - start.QuadPart;
-	elapsed.QuadPart *= 1000000;
-	elapsed.QuadPart /= frequency.QuadPart;
+static inline LARGE_INTEGER gfx_rt64_profile_marker() {
+	LARGE_INTEGER marker;
+	QueryPerformanceCounter(&marker);
+	return marker;
+}
+
+static inline LARGE_INTEGER gfx_rt64_profile_delta(LARGE_INTEGER start, LARGE_INTEGER end) {
+	LARGE_INTEGER Delta;
+	Delta.QuadPart = end.QuadPart - start.QuadPart;
+	Delta.QuadPart *= 1000000;
+	Delta.QuadPart /= RT64.Frequency.QuadPart;
+	return Delta;
 }
 
 static void gfx_rt64_rapi_unload_shader(struct ShaderProgram *old_prg) {
@@ -175,7 +183,7 @@ RT64_SHADER *gfx_rt64_render_thread_load_shader_variant(ShaderProgram *shaderPro
 		shaderProgram->shaderVariantMap[variantKey] = RT64.lib.CreateShader(RT64.device, shaderProgram->shaderId, filter, hAddr, vAddr, flags);
 
 		// Print shader discovery to reduce stutters when playing through the game.
-		printf("gfx_rt64_render_thread_preload_shader(0x%X, %d, %d, %d, %d, %d, %d);\n", shaderProgram->shaderId, raytrace, filter, hAddr, vAddr, normalMap ? "true" : "false", specularMap ? "true" : "false");
+		printf("gfx_rt64_render_thread_preload_shader(0x%X, %d, %d, %d, %d, %s, %s);\n", shaderProgram->shaderId, raytrace, filter, hAddr, vAddr, normalMap ? "true" : "false", specularMap ? "true" : "false");
 	}
 
 	return shaderProgram->shaderVariantMap[variantKey];
@@ -205,6 +213,7 @@ void gfx_rt64_render_thread_preload_shaders() {
 	gfx_rt64_render_thread_preload_shader(0xA00, 0, 1, 2, 2, false, false);
 	gfx_rt64_render_thread_preload_shader(0xA00, 1, 1, 0, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0xA00, 1, 1, 2, 2, false, false);
+	gfx_rt64_render_thread_preload_shader(0xA00, 1, 1, 0, 0, true, false);
 	gfx_rt64_render_thread_preload_shader(0x1045045, 1, 1, 2, 2, true, false);
 	gfx_rt64_render_thread_preload_shader(0x1045045, 1, 1, 2, 2, false, false);
 	gfx_rt64_render_thread_preload_shader(0x1045045, 1, 1, 1, 1, false, false);
@@ -223,6 +232,7 @@ void gfx_rt64_render_thread_preload_shaders() {
 	gfx_rt64_render_thread_preload_shader(0x1200200, 1, 0, 0, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0x1200A00, 1, 1, 2, 2, false, false);
 	gfx_rt64_render_thread_preload_shader(0x1200A00, 0, 1, 2, 2, false, false);
+	gfx_rt64_render_thread_preload_shader(0x1200A00, 1, 1, 0, 0, true, false);
 	gfx_rt64_render_thread_preload_shader(0x120038D, 1, 1, 2, 2, false, false);
 	gfx_rt64_render_thread_preload_shader(0x1200A00, 1, 1, 0, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0x1A00045, 0, 1, 1, 1, false, false);
@@ -244,6 +254,9 @@ void gfx_rt64_render_thread_preload_shaders() {
 	gfx_rt64_render_thread_preload_shader(0x5045045, 1, 1, 2, 2, true, false);
 	gfx_rt64_render_thread_preload_shader(0x5045045, 1, 1, 0, 0, true, false);
 	gfx_rt64_render_thread_preload_shader(0x5200200, 1, 0, 0, 0, false, false);
+	gfx_rt64_render_thread_preload_shader(0x5200045, 1, 1, 0, 0, false, false);
+	gfx_rt64_render_thread_preload_shader(0x5200A00, 1, 1, 0, 0, true, false);
+	gfx_rt64_render_thread_preload_shader(0x5200A00, 1, 1, 0, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0x5A00A00, 1, 1, 2, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0x5A00A00, 0, 1, 0, 0, false, false);
 	gfx_rt64_render_thread_preload_shader(0x5A00A00, 1, 1, 2, 2, false, false);
@@ -489,10 +502,10 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 		if (!RT64.pauseMode && (RT64.run_one_game_iter != nullptr)) {
 			// Run one game iteration.
 			LARGE_INTEGER GameStartTime, GameEndTime;
-			QueryPerformanceCounter(&GameStartTime);
+			GameStartTime = gfx_rt64_profile_marker();
 			RT64.run_one_game_iter();
-			QueryPerformanceCounter(&GameEndTime);
-			elapsed_time(GameStartTime, GameEndTime, RT64.Frequency, ElapsedMicroseconds);
+			GameEndTime = gfx_rt64_profile_marker();
+			ElapsedMicroseconds = gfx_rt64_profile_delta(GameStartTime, GameEndTime);
 
 			// Print the time it took to process the frame.
 			if (RT64.renderInspectorActive) {
@@ -522,8 +535,8 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 			int cyclesWaited = 0;
 
 			// Sleep if possible to avoid busy waiting too much.
-			QueryPerformanceCounter(&RT64.EndingTime);
-			elapsed_time(RT64.StartingTime, RT64.EndingTime, RT64.Frequency, ElapsedMicroseconds);
+			RT64.EndingTime = gfx_rt64_profile_marker();
+			ElapsedMicroseconds = gfx_rt64_profile_delta(RT64.StartingTime, RT64.EndingTime);
 			int SleepMs = ((FramerateMicroseconds - ElapsedMicroseconds.QuadPart) - 500) / 1000;
 			if (SleepMs > 0) {
 				Sleep(SleepMs);
@@ -532,8 +545,8 @@ LRESULT CALLBACK gfx_rt64_wnd_proc(HWND hWnd, UINT message, WPARAM wParam, LPARA
 
 			// Busy wait to reach the desired framerate.
 			do {
-				QueryPerformanceCounter(&RT64.EndingTime);
-				elapsed_time(RT64.StartingTime, RT64.EndingTime, RT64.Frequency, ElapsedMicroseconds);
+				RT64.EndingTime = gfx_rt64_profile_marker();
+				ElapsedMicroseconds = gfx_rt64_profile_delta(RT64.StartingTime, RT64.EndingTime);
 				cyclesWaited++;
 			} while (ElapsedMicroseconds.QuadPart < FramerateMicroseconds);
 
@@ -587,7 +600,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 
 	// Start timers.
 	QueryPerformanceFrequency(&RT64.Frequency);
-	QueryPerformanceCounter(&RT64.StartingTime);
+	RT64.StartingTime = gfx_rt64_profile_marker();
 	RT64.dropNextFrame = false;
 	RT64.turboMode = false;
 	
@@ -1640,14 +1653,17 @@ inline void gfx_rt64_render_thread_draw_display_list(uint32_t uid, GameFrame *cu
 }
 
 void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *prevFrame, float curFrameWeight) {
+	LARGE_INTEGER elapsedMicro;
+
 	RT64.staticMeshesDrawn = 0;
 	RT64.dynamicMeshesDrawn = 0;
 
 	// Copy the frame's static lights.
 	memcpy(RT64.renderLights, curFrame->areaLights, sizeof(RT64_LIGHT) * curFrame->areaLightCount);
 	RT64.renderLightCount = curFrame->areaLightCount;
-	
+
 	// Reset the draw counter for all active display lists.
+	LARGE_INTEGER dlStart = gfx_rt64_profile_marker();
 	auto gpuDlIt = RT64.GPUDisplayLists.begin();
 	while (gpuDlIt != RT64.GPUDisplayLists.end()) {
 		auto &dl = gpuDlIt->second;
@@ -1685,6 +1701,10 @@ void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *prevFrame
 		gpuDlIt++;
 	}
 
+	LARGE_INTEGER dlEnd = gfx_rt64_profile_marker();
+	elapsedMicro = gfx_rt64_profile_delta(dlStart, dlEnd);
+	double dlMs = elapsedMicro.QuadPart / 1000.0;
+
 	// Interpolate and update the view.
 	RT64_MATRIX4 viewMatrix;
 	float fovRadians;
@@ -1714,6 +1734,10 @@ void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *prevFrame
 
 	// Additional information.
 	if ((RT64.renderInspector != nullptr) && RT64.renderInspectorActive) {
+		char dlMsMessage[128];
+		sprintf(dlMsMessage, "RENDER DL: %.3f ms\n", dlMs);
+		RT64.lib.PrintMessageInspector(RT64.renderInspector, dlMsMessage);
+
 		char infoMessage[128];
 		sprintf(infoMessage, "ST %d DYN %d\n", RT64.staticMeshesDrawn, RT64.dynamicMeshesDrawn);
 		RT64.lib.PrintMessageInspector(RT64.renderInspector, infoMessage);
@@ -1831,7 +1855,7 @@ void gfx_rt64_render_thread_upload_texture_queue() {
 }
 
 void gfx_rt64_render_thread() {
-	LARGE_INTEGER FrameStartTime, FrameEndTime, ElapsedMicroseconds;
+	LARGE_INTEGER frameStart, frameEnd, preprocessStart, preprocessEnd, elapsedMicro;
 
 	// Setup scene and view.
 	RT64.scene = RT64.lib.CreateScene(RT64.device);
@@ -1908,7 +1932,11 @@ void gfx_rt64_render_thread() {
 
 		if (curFrameIndex >= 0) {
 			// Run any necessary preprocessing.
+			preprocessStart = gfx_rt64_profile_marker();
 			gfx_rt64_render_thread_preprocess_frames(&RT64.frames[curFrameIndex], &RT64.frames[prevFrameIndex]);
+			preprocessEnd = gfx_rt64_profile_marker();
+			elapsedMicro = gfx_rt64_profile_delta(preprocessStart, preprocessEnd);
+			double preprocessTimeMs = elapsedMicro.QuadPart / 1000.0;
 
 			// Draw as many frames as the target framerate indicates.
 			const unsigned int framesPerUpdate = renderTargetFPS / 30;
@@ -1917,8 +1945,11 @@ void gfx_rt64_render_thread() {
 				// Print to the inspector the previous time it took to draw a frame.
 				if ((RT64.renderInspector != nullptr) && RT64.renderInspectorActive) {
 					const std::lock_guard<std::mutex> lock(RT64.renderInspectorMutex);
+					char preprocessTimeMsg[64];
+					sprintf(preprocessTimeMsg, "RENDER PREPROCESS: %.3f ms\n", preprocessTimeMs);
+
 					char renderDeltaTimeMsg[64];
-					sprintf(renderDeltaTimeMsg, "RENDER: %.3f ms\n", frameDeltaTimeMs);
+					sprintf(renderDeltaTimeMsg, "RENDER FRAME: %.3f ms\n", frameDeltaTimeMs);
 					RT64.lib.PrintClearInspector(RT64.renderInspector);
 					RT64.lib.PrintMessageInspector(RT64.renderInspector, renderDeltaTimeMsg);
 					for (const std::string &message : RT64.renderInspectorMessages) {
@@ -1961,11 +1992,11 @@ void gfx_rt64_render_thread() {
 				}
 
 				// Draw the frame and measure the time right before and right after.
-				QueryPerformanceCounter(&FrameStartTime);
+				frameStart = gfx_rt64_profile_marker();
 				gfx_rt64_render_thread_draw_frame(&RT64.frames[curFrameIndex], &RT64.frames[prevFrameIndex], (f + 1) * weightPerFrame);
-				QueryPerformanceCounter(&FrameEndTime);
-				elapsed_time(FrameStartTime, FrameEndTime, RT64.Frequency, ElapsedMicroseconds);
-				frameDeltaTimeMs = ElapsedMicroseconds.QuadPart / 1000.0;
+				frameEnd = gfx_rt64_profile_marker();
+				elapsedMicro = gfx_rt64_profile_delta(frameStart, frameEnd);
+				frameDeltaTimeMs = elapsedMicro.QuadPart / 1000.0;
 
 				// Start skipping frames if it took considerably longer than the target framerate to draw a frame.
 				if (frameDeltaTimeMs > (targetDeltaTimeMs * FrameSkippingMultiplier)) {
