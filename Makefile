@@ -720,7 +720,11 @@ $(BASEPACK_LST): $(EXE)
 	@find levels -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 	@find textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 ifeq ($(RENDER_API),RT64)
+	@find actors -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find levels -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find textures -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 	@find rt64/textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find rt64/textures -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 endif
 endif
 
