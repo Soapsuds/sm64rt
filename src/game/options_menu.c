@@ -79,28 +79,37 @@ static const u8 optsCameraStr[][32] = {
 #ifdef RAPI_RT64
 static const u8 optsRT64Str[][32] = {
     { TEXT_OPT_TARGETFPS },
-    { TEXT_OPT_DLSS },
+    { TEXT_OPT_UPSCALER },
+    { TEXT_OPT_UPSMODE },
     { TEXT_OPT_RESSCALE },
     { TEXT_OPT_MAXLIGHTS },
     { TEXT_OPT_SPHEREL },
     { TEXT_OPT_GI },
     { TEXT_OPT_DENOISER },
     { TEXT_OPT_MOTBLUR },
-    { TEXT_OPT_DLSS_OFF },
-    { TEXT_OPT_DLSS_AUTO },
-    { TEXT_OPT_DLSS_MAXQ },
-    { TEXT_OPT_DLSS_BAL },
-    { TEXT_OPT_DLSS_MAXP },
-    { TEXT_OPT_DLSS_ULTP }
+    { TEXT_OPT_UPSCALER_OFF },
+    { TEXT_OPT_UPSCALER_AUTO },
+    { TEXT_OPT_UPSCALER_DLSS },
+    { TEXT_OPT_UPSCALER_FSR },
+    { TEXT_OPT_UPSCALER_MAXQ },
+    { TEXT_OPT_UPSCALER_BAL },
+    { TEXT_OPT_UPSCALER_MAXP },
+    { TEXT_OPT_UPSCALER_ULTP }
 };
 
-static const u8 *dlssChoices[] = {
-    optsRT64Str[8],
+static const u8 *upscalerChoices[] = {
     optsRT64Str[9],
     optsRT64Str[10],
     optsRT64Str[11],
-    optsRT64Str[12],
-    optsRT64Str[13]
+    optsRT64Str[12]
+};
+
+static const u8 *upscalerModeChoices[] = {
+    optsRT64Str[10],
+    optsRT64Str[13],
+    optsRT64Str[14],
+    optsRT64Str[15],
+    optsRT64Str[16]
 };
 #endif
 
@@ -266,25 +275,41 @@ static struct Option optsCamera[] = {
 #endif
 
 #ifdef RAPI_RT64
-extern bool gfx_rt64_dlss_supported();
 
-static bool optdlss_enabled() {
-    return gfx_rt64_dlss_supported();
+extern bool gfx_rt64_dlss_supported();
+extern bool gfx_rt64_fsr_supported();
+
+static bool opt_upscaler_enabled() {
+    return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
 }
 
-static bool optresscale_enabled() {
-    return (configRT64DlssMode == 0) || !optdlss_enabled();
+static bool opt_upscaler_mode_enabled() {
+    switch (configRT64Upscaler) {
+    case 1:
+        return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
+    case 2:
+        return gfx_rt64_dlss_supported();
+    case 3:
+        return gfx_rt64_fsr_supported();
+    default:
+        return false;
+    }
+}
+
+static bool opt_resolution_scale_enabled() {
+    return !opt_upscaler_mode_enabled();
 }
 
 static struct Option optsRT64[] = {
     DEF_OPT_SCROLL( optsRT64Str[0], 0, &configRT64TargetFPS, 30, 360, 30 ),
-    DEF_OPT_CHOICE( optsRT64Str[1], optdlss_enabled, &configRT64DlssMode, dlssChoices ),
-    DEF_OPT_SCROLL( optsRT64Str[2], optresscale_enabled, &configRT64ResScale, 10, 200, 1 ),
-    DEF_OPT_SCROLL( optsRT64Str[3], 0, &configRT64MaxLights, 1, 16, 1 ),
-    DEF_OPT_TOGGLE( optsRT64Str[4], 0, &configRT64SphereLights ),
-    DEF_OPT_TOGGLE( optsRT64Str[5], 0, &configRT64GI ),
-    DEF_OPT_TOGGLE( optsRT64Str[6], 0, &configRT64Denoiser ),
-    DEF_OPT_SCROLL( optsRT64Str[7], 0, &configRT64MotionBlurStrength, 0, 100, 5 ),
+    DEF_OPT_CHOICE( optsRT64Str[1], opt_upscaler_enabled, &configRT64Upscaler, upscalerChoices ),
+    DEF_OPT_CHOICE( optsRT64Str[2], opt_upscaler_mode_enabled, &configRT64UpscalerMode, upscalerModeChoices ),
+    DEF_OPT_SCROLL( optsRT64Str[3], opt_resolution_scale_enabled, &configRT64ResScale, 10, 200, 1 ),
+    DEF_OPT_SCROLL( optsRT64Str[4], 0, &configRT64MaxLights, 1, 16, 1 ),
+    DEF_OPT_TOGGLE( optsRT64Str[5], 0, &configRT64SphereLights ),
+    DEF_OPT_TOGGLE( optsRT64Str[6], 0, &configRT64GI ),
+    DEF_OPT_TOGGLE( optsRT64Str[7], 0, &configRT64Denoiser ),
+    DEF_OPT_SCROLL( optsRT64Str[8], 0, &configRT64MotionBlurStrength, 0, 100, 5 ),
     DEF_OPT_BUTTON( optsVideoStr[9], optvideo_apply ),
 };
 #endif
