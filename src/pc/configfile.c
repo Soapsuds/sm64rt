@@ -98,6 +98,7 @@ unsigned int configRT64TargetFPS = 30;
 unsigned int configRT64ResScale = 100;
 unsigned int configRT64MaxLights = 6;
 unsigned int configRT64MotionBlurStrength = 0;
+unsigned int configRT64UpscalerSharpness = 0;
 bool         configRT64SphereLights = false;
 bool         configRT64GI = false;
 unsigned int configRT64Upscaler = 1;
@@ -161,6 +162,7 @@ static const struct ConfigOption options[] = {
     {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
     {.name = "rt64_upscaler",                  .type = CONFIG_TYPE_UINT, .uintValue = &configRT64Upscaler},
     {.name = "rt64_upscaler_mode",             .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
+    {.name = "rt64_upscaler_sharpness",        .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerSharpness},
     {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
     {.name = "rt64_static_mesh_cache",         .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64StaticMeshCache},
     {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},

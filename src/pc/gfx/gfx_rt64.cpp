@@ -367,6 +367,7 @@ void gfx_rt64_apply_config() {
 		RT64.renderViewDesc.motionBlurStrength = configRT64MotionBlurStrength / 100.0f;
 		RT64.renderViewDesc.upscaler = configRT64Upscaler;
 		RT64.renderViewDesc.upscalerMode = configRT64UpscalerMode;
+		RT64.renderViewDesc.upscalerSharpness = configRT64UpscalerSharpness / 100.0f;
 		RT64.useVsync = configWindow.vsync;
 		RT64.targetFPS = configRT64TargetFPS;
 		RT64.renderViewDescChanged = true;
