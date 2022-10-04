@@ -668,6 +668,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.defaultMaterial.fogMul = 0.0f;
 	RT64.defaultMaterial.fogOffset = 0.0f;
 	RT64.defaultMaterial.fogEnabled = false;
+	RT64.defaultMaterial.lockMask = 0.0f;
 
 	// Initialize camera.
 	GameFrame *CPUFrame = &RT64.frames[RT64.CPUFrameIndex];
@@ -1691,6 +1692,9 @@ inline void gfx_rt64_render_thread_draw_display_list(uint32_t uid, GameFrame *cu
 		instDesc.normalTexture = gfx_rt64_render_thread_find_texture(curInstance.textures.normal);
 		instDesc.specularTexture = gfx_rt64_render_thread_find_texture(curInstance.textures.specular);
 		instDesc.mesh = usedMesh;
+
+		const bool animatedTexture = (curInstance.textures.diffuse != prevInstance.textures.diffuse);
+		instDesc.material.lockMask = animatedTexture ? 1.0f : 0.0f;
 
 		// Assign the shader to the instance. Create if necessary.
 		const auto &shader = curInstance.shader;
