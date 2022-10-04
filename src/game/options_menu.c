@@ -284,7 +284,7 @@ static bool opt_upscaler_enabled() {
     return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
 }
 
-static bool opt_upscaler_mode_sharpness_enabled() {
+static bool opt_upscaler_in_use() {
     switch (configRT64Upscaler) {
     case 1:
         return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
@@ -297,15 +297,23 @@ static bool opt_upscaler_mode_sharpness_enabled() {
     }
 }
 
+static bool opt_upscaler_mode_enabled() {
+    return opt_upscaler_in_use();
+}
+
+static bool opt_upscaler_sharpness_enabled() {
+    return opt_upscaler_in_use();
+}
+
 static bool opt_resolution_scale_enabled() {
-    return !opt_upscaler_mode_enabled();
+    return !opt_upscaler_in_use();
 }
 
 static struct Option optsRT64[] = {
     DEF_OPT_SCROLL( optsRT64Str[0], 0, &configRT64TargetFPS, 30, 360, 30 ),
     DEF_OPT_CHOICE( optsRT64Str[1], opt_upscaler_enabled, &configRT64Upscaler, upscalerChoices ),
-    DEF_OPT_CHOICE( optsRT64Str[2], opt_upscaler_mode_sharpness_enabled, &configRT64UpscalerMode, upscalerModeChoices ),
-    DEF_OPT_SCROLL( optsRT64Str[3], opt_upscaler_mode_sharpness_enabled, &configRT64UpscalerSharpness, 0, 100, 5 ),
+    DEF_OPT_CHOICE( optsRT64Str[2], opt_upscaler_mode_enabled, &configRT64UpscalerMode, upscalerModeChoices ),
+    DEF_OPT_SCROLL( optsRT64Str[3], opt_upscaler_sharpness_enabled, &configRT64UpscalerSharpness, 0, 100, 5 ),
     DEF_OPT_SCROLL( optsRT64Str[4], opt_resolution_scale_enabled, &configRT64ResScale, 10, 200, 1 ),
     DEF_OPT_SCROLL( optsRT64Str[5], 0, &configRT64MaxLights, 1, 16, 1 ),
     DEF_OPT_TOGGLE( optsRT64Str[6], 0, &configRT64SphereLights ),
