@@ -161,7 +161,7 @@ static const struct ConfigOption options[] = {
     {.name = "rt64_sphere_lights",             .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
     {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
     {.name = "rt64_upscaler",                  .type = CONFIG_TYPE_UINT, .uintValue = &configRT64Upscaler},
-    {.name = "rt64_upscaler_mode",             .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
+    {.name = "rt64_upscaler_mode_common",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
     {.name = "rt64_upscaler_sharpness",        .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerSharpness},
     {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
     {.name = "rt64_static_mesh_cache",         .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64StaticMeshCache},

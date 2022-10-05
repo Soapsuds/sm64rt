@@ -101,10 +101,13 @@
 #define TEXT_OPT_UPSCALER_AUTO _("Auto")
 #define TEXT_OPT_UPSCALER_DLSS _("NVIDIA DLSS")
 #define TEXT_OPT_UPSCALER_FSR  _("AMD FSR")
-#define TEXT_OPT_UPSCALER_QUAL _("Quality")
-#define TEXT_OPT_UPSCALER_BAL  _("Balanced")
-#define TEXT_OPT_UPSCALER_PERF _("Performance")
+#define TEXT_OPT_UPSCALER_XESS _("Intel XeSS")
 #define TEXT_OPT_UPSCALER_ULTP _("Ultra Performance")
+#define TEXT_OPT_UPSCALER_PERF _("Performance")
+#define TEXT_OPT_UPSCALER_BAL  _("Balanced")
+#define TEXT_OPT_UPSCALER_QUAL _("Quality")
+#define TEXT_OPT_UPSCALER_ULTQ _("Ultra Quality")
+#define TEXT_OPT_UPSCALER_NAT  _("Native")
 
 #else // VERSION
 
@@ -185,10 +188,13 @@
 #define TEXT_OPT_UPSCALER_AUTO _("Auto")
 #define TEXT_OPT_UPSCALER_DLSS _("NVIDIA DLSS")
 #define TEXT_OPT_UPSCALER_FSR  _("AMD FSR")
-#define TEXT_OPT_UPSCALER_QUAL _("Quality")
-#define TEXT_OPT_UPSCALER_BAL  _("Balanced")
-#define TEXT_OPT_UPSCALER_PERF _("Performance")
+#define TEXT_OPT_UPSCALER_XESS _("Intel XeSS")
 #define TEXT_OPT_UPSCALER_ULTP _("Ultra Performance")
+#define TEXT_OPT_UPSCALER_PERF _("Performance")
+#define TEXT_OPT_UPSCALER_BAL  _("Balanced")
+#define TEXT_OPT_UPSCALER_QUAL _("Quality")
+#define TEXT_OPT_UPSCALER_ULTQ _("Ultra Quality")
+#define TEXT_OPT_UPSCALER_NAT  _("Native")
 
 #endif // VERSION
 

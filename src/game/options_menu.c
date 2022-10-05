@@ -92,25 +92,31 @@ static const u8 optsRT64Str[][32] = {
     { TEXT_OPT_UPSCALER_AUTO },
     { TEXT_OPT_UPSCALER_DLSS },
     { TEXT_OPT_UPSCALER_FSR },
-    { TEXT_OPT_UPSCALER_QUAL },
-    { TEXT_OPT_UPSCALER_BAL },
+    { TEXT_OPT_UPSCALER_XESS },
+    { TEXT_OPT_UPSCALER_ULTP },
     { TEXT_OPT_UPSCALER_PERF },
-    { TEXT_OPT_UPSCALER_ULTP }
+    { TEXT_OPT_UPSCALER_BAL },
+    { TEXT_OPT_UPSCALER_QUAL },
+    { TEXT_OPT_UPSCALER_ULTQ },
+    { TEXT_OPT_UPSCALER_NAT },
 };
 
 static const u8 *upscalerChoices[] = {
     optsRT64Str[10],
     optsRT64Str[11],
     optsRT64Str[12],
-    optsRT64Str[13]
+    optsRT64Str[13],
+    optsRT64Str[14]
 };
 
 static const u8 *upscalerModeChoices[] = {
     optsRT64Str[11],
-    optsRT64Str[14],
     optsRT64Str[15],
     optsRT64Str[16],
-    optsRT64Str[17]
+    optsRT64Str[17],
+    optsRT64Str[18],
+    optsRT64Str[19],
+    optsRT64Str[20]
 };
 #endif
 
@@ -279,19 +285,22 @@ static struct Option optsCamera[] = {
 
 extern bool gfx_rt64_dlss_supported();
 extern bool gfx_rt64_fsr_supported();
+extern bool gfx_rt64_xess_supported();
 
 static bool opt_upscaler_enabled() {
-    return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
+    return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported() || gfx_rt64_xess_supported();
 }
 
 static bool opt_upscaler_in_use() {
     switch (configRT64Upscaler) {
     case 1:
-        return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported();
+        return opt_upscaler_enabled();
     case 2:
         return gfx_rt64_dlss_supported();
     case 3:
         return gfx_rt64_fsr_supported();
+    case 4:
+        return gfx_rt64_xess_supported();
     default:
         return false;
     }
@@ -302,7 +311,7 @@ static bool opt_upscaler_mode_enabled() {
 }
 
 static bool opt_upscaler_sharpness_enabled() {
-    return opt_upscaler_in_use();
+    return opt_upscaler_in_use() && (configRT64Upscaler != 4);
 }
 
 static bool opt_resolution_scale_enabled() {

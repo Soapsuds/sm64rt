@@ -627,6 +627,7 @@ static void gfx_rt64_wapi_init(const char *window_title) {
 	RT64.skyTextureId = 0;
 	RT64.dlssSupport = false;
 	RT64.fsrSupport = false;
+	RT64.xessSupport = false;
 
 	// Initialize the triangle list index array used by all meshes.
 	unsigned int index = 0;
@@ -1420,6 +1421,10 @@ extern "C" bool gfx_rt64_fsr_supported() {
 	return RT64.fsrSupport;
 }
 
+extern "C" bool gfx_rt64_xess_supported() {
+	return RT64.xessSupport;
+}
+
 extern "C" void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {
 	static bool loadedLayoutMods = false;
 	if (!loadedLayoutMods) {
@@ -1973,6 +1978,7 @@ void gfx_rt64_render_thread() {
 	RT64.view = RT64.lib.CreateView(RT64.scene);
 	RT64.dlssSupport = RT64.lib.GetViewUpscalerSupport(RT64.view, RT64_UPSCALER_DLSS);
 	RT64.fsrSupport = RT64.lib.GetViewUpscalerSupport(RT64.view, RT64_UPSCALER_FSR);
+	RT64.xessSupport = RT64.lib.GetViewUpscalerSupport(RT64.view, RT64_UPSCALER_XESS);
 	
 	// Draw at least one empty frame to fill the window.
 	RT64.lib.DrawDevice(RT64.device, gfx_rt64_use_vsync() ? 1 : 0, 0.0f);
