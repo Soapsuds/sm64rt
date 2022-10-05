@@ -8,7 +8,7 @@ Fork of [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) that adds support for 
 
 Please do not report issues that don't provide new information. Remember to check if your problem has already been reported on the [issue tracker](https://github.com/DarioSamo/sm64rt/issues).
 
-Performance is highly dependent on the target resolution and it still has plenty of room for improvement. Using upscalers like NVIDIA DLSS will help significantly in achieving higher framerates. If you cannot reach the target framerate, it's recommended to lower the resolution with the internal scaler or select a lower quality DLSS preset, as it has the biggest impact in performance out of all the options.
+Performance is highly dependent on the target resolution and it still has plenty of room for improvement. Using upscalers like **NVIDIA DLSS** and **AMD FSR** will help significantly in achieving higher framerates.
 
 ## Requirements
 * Windows 10 (2004 or newer)
@@ -24,8 +24,9 @@ Performance is highly dependent on the target resolution and it still has plenty
 * Custom material properties based on texture names or geometry layouts.
 * Normal map support.
 * Real-time raytraced shadows, reflections, refractions and global illumination.
-* Real-time denoiser (experimental).
+* Real-time denoiser.
 * NVIDIA DLSS (Deep Learning Super Sampling).
+* AMD FSR 2 (FidelityFX Super Resolution)
 
 ## Building
 For building instructions, please refer to the [sm64ex wiki](https://github.com/sm64pc/sm64ex/wiki) and follow the process as normal with these additional build flags:
