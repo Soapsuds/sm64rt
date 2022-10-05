@@ -26,7 +26,8 @@ Performance is highly dependent on the target resolution and it still has plenty
 * Real-time raytraced shadows, reflections, refractions and global illumination.
 * Real-time denoiser.
 * NVIDIA DLSS (Deep Learning Super Sampling).
-* AMD FSR 2 (FidelityFX Super Resolution)
+* AMD FSR 2 (FidelityFX Super Resolution).
+* Intel XeSS (Intel Xe Super Sampling).
 
 ## Building
 For building instructions, please refer to the [sm64ex wiki](https://github.com/sm64pc/sm64ex/wiki) and follow the process as normal with these additional build flags:
