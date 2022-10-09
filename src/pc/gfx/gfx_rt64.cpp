@@ -2122,6 +2122,9 @@ void gfx_rt64_render_thread() {
 					f += framesToSkip;
 					framesSkipped += framesToSkip;
 				}
+				else {
+					framesSkipped = 0;
+				}
 			}
 
 			// Clear the barrier.
