@@ -1,6 +1,6 @@
 # sm64rt
 
-Fork of [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) that adds support for [RT64](https://github.com/DarioSamo/RT64), a hardware-accelerated real-time path tracer.
+Fork of [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) that adds support for [RT64](https://github.com/DarioSamo/sm64rt-legacy-renderer), a hardware-accelerated real-time path tracer.
 
 ## Alpha Phase
 
