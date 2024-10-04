@@ -4515,7 +4515,7 @@ typedef union {
 	Gfx *_g = (Gfx *)(pkt);						\
 									\
 	_g->words.w0 = _SHIFTL(cmd, 24, 8);				\
-	_g->words.w1 = (param);						\
+	_g->words.w1 = (uintptr_t)(param);				\
 }
 
 #define gsDPParam(cmd, param)						\
@@ -4770,7 +4770,7 @@ typedef union {
 #define	gsDPLoadSync()		gsDPNoParam(G_RDPLOADSYNC)
 #define	gDPNoOp(pkt)		gDPNoParam(pkt, G_NOOP)
 #define	gsDPNoOp()		gsDPNoParam(G_NOOP)
-#define	gDPNoOpTag(pkt, tag)	gDPParam(pkt, G_NOOP, tag)
+#define gDPNoOpTag(pkt, tag)    gDPParam(pkt, G_NOOP, (uintptr_t)(tag))
 #define	gsDPNoOpTag(tag)	gsDPParam(G_NOOP, tag)
 
 #endif /* _LANGUAGE_C */
